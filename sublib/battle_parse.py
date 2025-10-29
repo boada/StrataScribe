@@ -1,19 +1,22 @@
 import os
-import pathlib
-import zipfile
-
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Union, Tuple, Any
 
-import xmltodict
 from lxml import html
 
 from sublib import wahapedia_db, wh40k_lists
 from sublib.stratagems.stratagem_filters import (
     filter_core_stratagems,
     filter_out_core_stratagems,
+    filter_empty_stratagems_by_faction,
+    filter_core_stratagems_from_list,
 )
 from sublib.stratagems.stratagem_utils import clean_html, clean_full_stratagem, remove_symbol, get_bracket_text, get_first_letters
-from sublib.faction_utils import safe_lower
+from sublib.faction_utils import (
+    safe_lower, get_faction_name, compare_unit_names, 
+    find_faction_from_roster, get_subfaction_from_units, find_detachment_from_roster
+)
+from sublib.file_utils import read_ros_file, get_dict_from_xml, delete_old_files
 
 # File Extensions
 FILE_EXT_ROSZ = ".rosz"
@@ -57,9 +60,9 @@ _full_stratagems_list = []
 _request_options = {}
 
 
-def init_parse():
+def init_parse() -> None:
     """
-    Initialize the parse by reading all csv files to dictionary format and creating the battlescribe folder if it does not exist
+    Initialize the parse by reading all csv files to dictionary format and creating the battlescribe folder if it does not exist.
     """
     global _datasheets_dict, _datasheets_stratagems_dict, _factions_dict, _stratagem_phases_dict, _stratagems_dict, _detachment_abilities_dict
     # reading all csv file to dictionary format
@@ -81,14 +84,24 @@ def init_parse():
 
 
 # request_options are coming from Web UI and has several options
-def parse_battlescribe(battlescribe_file_name, request_options):
+def parse_battlescribe(battlescribe_file_name: str, request_options: Dict[str, str]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
-    Parse the battlescribe file and returns the result in the form of a list of dictionaries and a list of lists
+    Parse the battlescribe file and returns the result in the form of three lists:
+    
+    Args:
+        battlescribe_file_name: Name of the .ros or .rosz file to parse
+        request_options: Dictionary of options from the web UI (show_core, show_empty, etc.)
+    
+    Returns:
+        Tuple containing:
+        - List of phase dictionaries (stratagems organized by game phase)
+        - List of unit dictionaries (stratagems organized by unit)
+        - List of all stratagem dictionaries
     """
     _initialize_parsing(request_options)
     
     # Parse roster structure
-    _read_ros_file(battlescribe_file_name)
+    _read_ros_file_wrapper(battlescribe_file_name)
     _prepare_roster_list()
     
     # Extract basic roster data
@@ -103,7 +116,7 @@ def parse_battlescribe(battlescribe_file_name, request_options):
     result_phase, result_units = _process_forces(wh_faction, wh_units, stratagems_data)
     
     # Clean up and finalize
-    _delete_old_files()
+    delete_old_files(battlescribe_folder)
     result_phase_sorted = _sort_phases_by_game_order(result_phase)
     
     total_stratagems = len(_get_full_stratagems_list())
@@ -113,8 +126,8 @@ def parse_battlescribe(battlescribe_file_name, request_options):
     return result_phase_sorted, result_units, _get_full_stratagems_list()
 
 
-def _initialize_parsing(request_options):
-    """Initialize parsing state and load data"""
+def _initialize_parsing(request_options: Dict[str, str]) -> None:
+    """Initialize parsing state and load data."""
     global _full_stratagems_list, _request_options
 
     if wahapedia_db.init_db() is True:
@@ -224,50 +237,15 @@ def _get_full_stratagems_list():
 
 
 
-def _read_ros_file(file_name):
+def _read_ros_file_wrapper(file_name: str) -> None:
+    """Wrapper to maintain global state while using new file utilities."""
     global _ros_dict
-    ros_file_name = file_name
-    file_path = os.path.join(battlescribe_folder, file_name)
-    
-    try:
-        if pathlib.Path(file_path).suffix == FILE_EXT_ROSZ:
-            try:
-                with zipfile.ZipFile(file_path, "r") as zip_ref:
-                    if not zip_ref.infolist():
-                        raise ValueError("Empty or corrupted .rosz file")
-                    
-                    rosz_packed_filename = zip_ref.infolist()[0].filename
-                    battlescribe_tmp = os.path.join(battlescribe_folder, "tmp")
-                    ros_file_name = file_name[:-1]
-
-                    os.makedirs(battlescribe_tmp, exist_ok=True)
-                    zip_ref.extractall(battlescribe_tmp)
-                    
-                    ros_file_path = os.path.join(battlescribe_folder, ros_file_name)
-                    if os.path.exists(ros_file_path):
-                        os.remove(ros_file_path)
-                    
-                    extracted_file_path = os.path.join(battlescribe_tmp, rosz_packed_filename)
-                    if not os.path.exists(extracted_file_path):
-                        raise FileNotFoundError(f"Expected file not found in archive: {rosz_packed_filename}")
-                    
-                    os.rename(extracted_file_path, ros_file_path)
-                    
-            except (zipfile.BadZipFile, zipfile.LargeZipFile) as e:
-                raise ValueError(f"Invalid or corrupted .rosz file: {e}")
-        
-        elif not os.path.exists(file_path):
-            raise FileNotFoundError(f"Roster file not found: {file_name}")
-
-        _ros_dict = _get_dict_from_xml(ros_file_name)
-        
-    except Exception as e:
-        print(f"Error reading roster file '{file_name}': {e}")
-        raise
+    _ros_dict = read_ros_file(file_name, battlescribe_folder)
 
 
 # if roster has several forces, that it is multidetachment army and _roster_list has more elements
-def _prepare_roster_list():
+def _prepare_roster_list() -> None:
+    """Extract forces from roster data into the global roster list."""
     global _ros_dict, _roster_list
     _roster_list = []
     if isinstance(_ros_dict["roster"]["forces"]["force"], list):
@@ -277,65 +255,24 @@ def _prepare_roster_list():
         _roster_list.append(_ros_dict["roster"]["forces"]["force"])
 
 
-def _find_faction():
-    result_faction = []
-
-    for roster_elem in _roster_list:
-        force_faction = None
-        catalogueName = roster_elem["@catalogueName"]
-        catalogueName_clean = _get_faction_name(catalogueName)
-
-        # Try to match catalogue name directly to faction name
-        for faction in _factions_dict:
-            faction_name = safe_lower(faction.get("name", ""))
-            cat_name_clean_lower = safe_lower(catalogueName_clean)
-            if (
-                faction_name in cat_name_clean_lower
-                or cat_name_clean_lower in faction_name
-            ):
-                force_faction = faction
-                break
-
-        # If no match yet, try using subfaction logic
-        if not force_faction and "selections" in roster_elem:
-            from sublib.faction_utils import (
-                extract_subfaction_names,
-                match_faction_name,
-            )
-
-            subfaction_names = extract_subfaction_names(
-                roster_elem, wh40k_lists.subfaction_types
-            )
-
-            # Try to match subfaction names to known faction names
-            for subfaction_name in subfaction_names:
-                subfaction_lookup = wh40k_lists.subfaction_rename_dict.get(
-                    subfaction_name, subfaction_name
-                )
-                for faction in _factions_dict:
-                    if match_faction_name(faction.get("name", ""), subfaction_lookup):
-                        force_faction = faction
-                        break
-                if force_faction:
-                    break
-
-        if force_faction:
-            print(f"Detected faction: {force_faction.get('name', 'Unknown')}")
-            result_faction.append(force_faction)
-        else:
-            print(f"Warning: Could not determine faction for force: {catalogueName_clean}")
-            result_faction.append(None)
-
-    return result_faction
+def _find_faction() -> List[Optional[Dict[str, Any]]]:
+    """Find faction information for each force in the roster."""
+    return find_faction_from_roster(
+        _roster_list, 
+        _factions_dict, 
+        wh40k_lists.subfaction_types,
+        wh40k_lists.subfaction_rename_dict,
+        get_faction_name
+    )
 
 
-def _find_detachment():
+def _find_detachment() -> List[Optional[str]]:
     """
     Attempts to find the detachment used in each force of the roster by inspecting unit keywords.
     Detachment names are loaded from Detachment_abilities.csv.
 
     Returns:
-        list of str: List of detected detachments for each force, or None if not found.
+        List of detected detachments for each force, or None if not found.
     """
 
     result = []
@@ -414,7 +351,8 @@ def _find_detachment():
     return result
 
 
-def _find_army_of_renown():
+def _find_army_of_renown() -> List[Optional[str]]:
+    """Find army of renown information for each force in the roster."""
     result_army_of_renown = []
     army_of_renown_name = None
     for roster_elem in _roster_list:
@@ -480,46 +418,14 @@ def _find_empty_stratagems():
     _empty_stratagems_list = empty_stratagems_full_list
 
 
-def _filter_empty_stratagems(faction_ids):
-    global _empty_stratagems_list
-    stratagems_list = []
-
-    for faction_id in faction_ids:
-        result_list = []
-
-        if faction_id is None:
-            stratagems_list.append(result_list)
-            continue
-
-        for empty_stratagem in _empty_stratagems_list:
-            empty_subfaction_id = empty_stratagem.get("subfaction_id", "")
-            empty_faction_id = empty_stratagem.get("faction_id", "")
-
-            if (
-                faction_id["id"] == empty_subfaction_id
-                or faction_id["id"] == empty_faction_id
-                or faction_id.get("parent_id") == empty_faction_id
-            ):
-                result_list.append(
-                    {"datasheet_id": "", "stratagem_id": empty_stratagem["id"]}
-                )
-
-        stratagems_list.append(result_list)
-
-    return stratagems_list
+def _filter_empty_stratagems(faction_ids: List[Optional[Dict[str, Any]]]) -> List[List[Dict[str, str]]]:
+    """Filter empty stratagems by faction IDs."""
+    return filter_empty_stratagems_by_faction(faction_ids, _empty_stratagems_list)
 
 
-def _filter_core_stratagems():
-    if not _request_options.get(OPTION_SHOW_CORE) == OPTION_VALUE_ON:
-        return []
-    result_list = []
-    for empty_stratagem in _empty_stratagems_list:
-        strat_type = empty_stratagem["type"].lower()
-        if STRATAGEM_TYPE_CORE_LOWER in strat_type:
-            result_list.append(
-                {"datasheet_id": "", "stratagem_id": empty_stratagem["id"]}
-            )
-    return result_list
+def _filter_core_stratagems() -> List[Dict[str, str]]:
+    """Filter core stratagems based on request options."""
+    return filter_core_stratagems_from_list(_empty_stratagems_list, _request_options.get(OPTION_SHOW_CORE))
 
 
 def _find_stratagems(units_ids):
@@ -831,44 +737,14 @@ def _get_stratagem_phase(stratagem_id):
             return stratagem_phase["phase"]
 
 
-def _get_faction_name(catalogue_name):
-    catalogue_array = remove_symbol(catalogue_name.split(" - "), "'")
-    faction_name = catalogue_array[-1]
-
-    if catalogue_array[-1] == "Craftworlds":
-        faction_name = catalogue_array[0]
-
-    if faction_name in wh40k_lists.subfaction_rename_dict:
-        faction_name = wh40k_lists.subfaction_rename_dict.get(faction_name)
-
-    return faction_name
+def _get_faction_name(catalogue_name: str) -> Optional[str]:
+    """Extract faction name from catalogue name."""
+    return get_faction_name(catalogue_name, wh40k_lists.subfaction_rename_dict, remove_symbol)
 
 
-def _get_subfaction_from_units(units_id):
-    """
-    Attempts to infer the subfaction based on unit keywords by matching them
-    (after cleaning) against the keys of `subfaction_rename_dict`.
-
-    Returns:
-        str or None: The matched subfaction value if found, otherwise None.
-    """
-    # print("🔎 Starting subfaction detection...")
-    subfaction_lookup = {
-        key.lower(): value for key, value in wh40k_lists.subfaction_rename_dict.items()
-    }
-    # print(f"📚 subfaction_rename_dict keys: {list(subfaction_lookup.keys())}")
-
-    for unit in units_id:
-        keywords = unit.get("keywords", [])
-        # print(f"🔍 Unit: {unit.get('name')}, Keywords: {keywords}")
-        for keyword in keywords:
-            keyword_clean = keyword.lower().replace("faction: ", "").strip()
-            if keyword_clean in subfaction_lookup:
-                # print(f"✅ Matched keyword '{keyword}' to subfaction '{subfaction_lookup[keyword_clean]}'")
-                return subfaction_lookup[keyword_clean]
-
-    # print("❌ No subfaction match found.")
-    return None
+def _get_subfaction_from_units(units_id: List[Dict[str, Any]]) -> Optional[str]:
+    """Get subfaction from unit keywords."""
+    return get_subfaction_from_units(units_id, wh40k_lists.subfaction_rename_dict)
 
 
 # some fix for current (february 2023) csv
@@ -909,86 +785,7 @@ def _fix_stratagem_dict():
 
 
 # compares battlescribe and wahapedia names according to rename dictionary
-def _compare_unit_names(wahapedia_name, battlescribe_name):
-    clean_battlescribe_name = battlescribe_name.replace("'", "")
-    if clean_battlescribe_name in wh40k_lists.unit_rename_dict:
-        if wh40k_lists.unit_rename_dict[clean_battlescribe_name] == wahapedia_name:
-            return True
-
-    if wahapedia_name == clean_battlescribe_name:
-        return True
-
-    return False
-
-
-# --- NON-Stratagem stuff ---
-
-
-
-
-
-def _delete_old_files():
-    try:
-        if not os.path.exists(battlescribe_folder):
-            return
-            
-        file_list = os.listdir(battlescribe_folder)
-        deleted_count = 0
-        
-        for single_file in file_list:
-            if not single_file.endswith('.ros'):
-                continue
-                
-            single_file_path = os.path.join(battlescribe_folder, single_file)
-            
-            try:
-                creation_time = datetime.fromtimestamp(os.path.getctime(single_file_path))
-                file_time_delta = datetime.now() - creation_time
-                
-                if file_time_delta > timedelta(hours=1):
-                    os.remove(single_file_path)
-                    deleted_count += 1
-                    
-            except (OSError, FileNotFoundError) as e:
-                print(f"Warning: Could not delete {single_file}: {e}")
-                continue
-        
-        if deleted_count > 0:
-            print(f"Cleaned up {deleted_count} old roster files")
-            
-    except Exception as e:
-        print(f"Warning: Error during file cleanup: {e}")
-
-
-def _get_dict_from_xml(xml_file_name):
-    xml_file_path = os.path.join(battlescribe_folder, xml_file_name)
-    
-    try:
-        if not os.path.exists(xml_file_path):
-            raise FileNotFoundError(f"Roster file not found: {xml_file_name}")
-        
-        if os.path.getsize(xml_file_path) == 0:
-            raise ValueError(f"Empty roster file: {xml_file_name}")
-        
-        with open(xml_file_path, encoding="utf8", errors="replace") as xml_file:
-            content = xml_file.read()
-            if not content.strip():
-                raise ValueError(f"Roster file contains no data: {xml_file_name}")
-            
-            data_dict = xmltodict.parse(content)
-            
-            # Validate basic roster structure
-            if "roster" not in data_dict:
-                raise ValueError("Invalid roster file: missing 'roster' element")
-                
-            return data_dict
-            
-    except UnicodeDecodeError as e:
-        raise ValueError(f"Invalid file encoding in '{xml_file_name}': {e}")
-    except Exception as e:
-        if "xml" in str(e).lower() or "parse" in str(e).lower():
-            raise ValueError(f"Invalid XML in roster file '{xml_file_name}': {e}")
-        raise ValueError(f"Error parsing roster file '{xml_file_name}': {e}")
-
-
+def _compare_unit_names(wahapedia_name: str, battlescribe_name: str) -> bool:
+    """Compare unit names using the rename dictionary."""
+    return compare_unit_names(wahapedia_name, battlescribe_name, wh40k_lists.unit_rename_dict)
 
