@@ -2,14 +2,41 @@ import string
 
 from json2html import json2html
 
-table_attributes = 'class="table table-bordered table-striped w-auto print-friendly"; '
+# CSS Classes
+CSS_TABLE_ATTRIBUTES = 'class="table table-bordered table-striped w-auto print-friendly"; '
+CSS_STRAT_WRAPPER = "stratWrapper_CS BreakInsideAvoid"
+CSS_STRAT_FACTION = "stratFaction_CS"
+CSS_STRAT_LEGEND = "ShowFluff stratLegend2"
+CSS_STRAT_TEXT = "stratText_CS"
+CSS_STRAT_NAME_9K = "stratName_9k"
+CSS_STRAT_NAME_CS = "stratName_CS"
+CSS_STRAT_NAME_WSP = "stratName_WSP"
+CSS_STRAT_BATTLE_TACTIC = "stratBattleTactic"
+CSS_STRAT_STRATEGIC_PLOY = "stratStrategicPloy"
+CSS_STRAT_EPIC_DEED = "stratEpicDeed"
+CSS_STRAT_REQUISITION = "stratRequisition"
+CSS_STRAT_WARGEAR = "stratWargear"
+CSS_UNIT_BLOCK = "unitBlock_CS"
+CSS_UNIT_NAME = "unitName_CS"
+CSS_UNIT_STRAT_LIST = "unitStratList_CS"
+CSS_UNIT_NO_STRAT = "unitNoStrat_CS"
+
+# Stratagem Types
+STRATAGEM_TYPE_BATTLE_TACTIC = "Battle Tactic Stratagem"
+STRATAGEM_TYPE_STRATEGIC_PLOY = "Strategic Ploy Stratagem"
+STRATAGEM_TYPE_EPIC_DEED = "Epic Deed Stratagem"
+STRATAGEM_TYPE_REQUISITION = "Requisition Stratagem"
+STRATAGEM_TYPE_WARGEAR = "Wargear Stratagem"
+STRATAGEM_TYPE_CORE = "Core Stratagem"
+
+table_attributes = CSS_TABLE_ATTRIBUTES
 
 stratagem_template = (
-    '<div class="stratWrapper_CS BreakInsideAvoid">'
+    f'<div class="{CSS_STRAT_WRAPPER}">'
     '<div class="$stratagem_class"><span>$stratagem_name</span><span>${stratagem_cp_cost}CP</span></div>'
-    '<div class="stratFaction_CS">$stratagem_type</div>'
-    '<p class="ShowFluff stratLegend2">$stratagem_legend</p>'
-    '<div class="stratText_CS">$stratagem_description </div>'
+    f'<div class="{CSS_STRAT_FACTION}">$stratagem_type</div>'
+    f'<p class="{CSS_STRAT_LEGEND}">$stratagem_legend</p>'
+    f'<div class="{CSS_STRAT_TEXT}">$stratagem_description </div>'
     "</div>"
 )
 
@@ -29,36 +56,49 @@ def convert_to_table(json_list):
 
 
 def convert_to_stratagem_list(json_list):
+    """Convert list of stratagem dictionaries to HTML"""
     result_html = ""
     for json_elem in json_list:
-        json_template = string.Template(stratagem_template)
-        stratagem_class = "stratName_9k "
-        if "Battle Tactic Stratagem" in json_elem["type"]:
-            stratagem_class += " stratBattleTactic"
-        elif "Strategic Ploy Stratagem" in json_elem["type"]:
-            stratagem_class += " stratStrategicPloy"
-        elif "Epic Deed Stratagem" in json_elem["type"]:
-            stratagem_class += " stratEpicDeed"
-        elif "Requisition Stratagem" in json_elem["type"]:
-            stratagem_class += " stratRequisition"
-        elif "Wargear Stratagem" in json_elem["type"]:
-            stratagem_class += " stratWargear"
-        elif "Core Stratagem" in json_elem["type"]:
-            stratagem_class = "stratName_CS"
-        else:
-            stratagem_class = "stratName_WSP"
-        clean_template = json_template.substitute(
-            stratagem_name=json_elem["name"],
-            stratagem_cp_cost=json_elem["cp_cost"],
-            stratagem_class=stratagem_class,
-            stratagem_type=json_elem["type"],
-            stratagem_legend=json_elem["legend"],
-            stratagem_description=json_elem["description"],
-        )
-
-        result_html += clean_template
-
+        result_html += _render_single_stratagem(json_elem)
     return result_html
+
+
+def _render_single_stratagem(stratagem_data):
+    """Render a single stratagem as HTML"""
+    json_template = string.Template(stratagem_template)
+    stratagem_class = _get_stratagem_css_class(stratagem_data["type"])
+    
+    return json_template.substitute(
+        stratagem_name=stratagem_data["name"],
+        stratagem_cp_cost=stratagem_data["cp_cost"],
+        stratagem_class=stratagem_class,
+        stratagem_type=stratagem_data["type"],
+        stratagem_legend=stratagem_data["legend"],
+        stratagem_description=stratagem_data["description"],
+    )
+
+
+def _get_stratagem_css_class(stratagem_type):
+    """Determine CSS class based on stratagem type"""
+    # Create a mapping for cleaner logic
+    type_to_class = {
+        STRATAGEM_TYPE_BATTLE_TACTIC: CSS_STRAT_BATTLE_TACTIC,
+        STRATAGEM_TYPE_STRATEGIC_PLOY: CSS_STRAT_STRATEGIC_PLOY,
+        STRATAGEM_TYPE_EPIC_DEED: CSS_STRAT_EPIC_DEED,
+        STRATAGEM_TYPE_REQUISITION: CSS_STRAT_REQUISITION,
+        STRATAGEM_TYPE_WARGEAR: CSS_STRAT_WARGEAR,
+    }
+    
+    base_class = CSS_STRAT_NAME_9K
+    
+    if STRATAGEM_TYPE_CORE in stratagem_type:
+        return CSS_STRAT_NAME_CS
+    
+    for type_key, class_name in type_to_class.items():
+        if type_key in stratagem_type:
+            return f"{base_class} {class_name}"
+    
+    return CSS_STRAT_NAME_WSP
 
 
 # New function: render units and their stratagems as divs for column layout
@@ -69,14 +109,14 @@ def convert_units_to_divs(units_dict):
     """
     html = ""
     for unit, stratagems in units_dict.items():
-        html += '<div class="unitBlock_CS">'
-        html += f'<div class="unitName_CS"><b>{unit}</b></div>'
+        html += f'<div class="{CSS_UNIT_BLOCK}">'
+        html += f'<div class="{CSS_UNIT_NAME}"><b>{unit}</b></div>'
         if stratagems:
-            html += '<ul class="unitStratList_CS">'
+            html += f'<ul class="{CSS_UNIT_STRAT_LIST}">'
             for strat in stratagems:
                 html += f"<li>{strat}</li>"
             html += "</ul>"
         else:
-            html += '<div class="unitNoStrat_CS"><i>No stratagems</i></div>'
+            html += f'<div class="{CSS_UNIT_NO_STRAT}"><i>No stratagems</i></div>'
         html += "</div>"
     return html

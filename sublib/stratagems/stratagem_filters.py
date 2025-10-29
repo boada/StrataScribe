@@ -2,17 +2,21 @@
 Stratagem filtering and validation utilities for BattleScribe parser.
 """
 
+# Constants
+OPTION_VALUE_ON = "on"
+STRATAGEM_TYPE_CORE_LOWER = "core"
+
 
 def filter_core_stratagems(empty_stratagems_list, show_core_option):
     """
     Returns a list of core stratagems (type contains 'core', case-insensitive) if show_core_option is 'on', else returns an empty list.
     """
-    if show_core_option != "on":
+    if show_core_option != OPTION_VALUE_ON:
         return []
     result_list = []
     for empty_stratagem in empty_stratagems_list:
         strat_type = empty_stratagem.get("type", "").lower()
-        if "core" in strat_type:
+        if STRATAGEM_TYPE_CORE_LOWER in strat_type:
             result_list.append(
                 {"datasheet_id": "", "stratagem_id": empty_stratagem["id"]}
             )
@@ -33,6 +37,6 @@ def filter_out_core_stratagems(stratagems, get_stratagem_from_id):
             strat = get_stratagem_from_id(strat_id)
             if strat:
                 strat_type = strat.get("type", "").lower()
-        if not (strat_type and "core" in strat_type):
+        if not (strat_type and STRATAGEM_TYPE_CORE_LOWER in strat_type):
             filtered.append(s)
     return filtered

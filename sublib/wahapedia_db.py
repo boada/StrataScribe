@@ -6,25 +6,36 @@ from datetime import datetime, timedelta
 
 import requests
 
+# URLs and File Names
+WAHAPEDIA_URL = "https://wahapedia.ru/wh40k10ed/"
+CSV_DATASHEETS = "Datasheets.csv"
+CSV_DATASHEETS_STRATAGEMS = "Datasheets_stratagems.csv"
+CSV_DETACHMENT_ABILITIES = "Detachment_abilities.csv"
+CSV_FACTIONS = "Factions.csv"
+CSV_STRATAGEM_PHASES = "StratagemPhases.csv"
+CSV_STRATAGEMS = "Stratagems.csv"
+CSV_LAST_UPDATE = "Last_update.csv"
+JSON_FILE_LIST = "_file_list.json"
+
 # URL for the Wahapedia website
-wahapedia_url = "https://wahapedia.ru/wh40k10ed/"
+wahapedia_url = WAHAPEDIA_URL
 
 # List of all CSV files to be downloaded from the website
 wahapedia_csv_list = [
-    "Datasheets.csv",
-    "Datasheets_stratagems.csv",
-    "Detachment_abilities.csv",
-    "Factions.csv",
-    "StratagemPhases.csv",
-    "Stratagems.csv",
-    "Last_update.csv",
+    CSV_DATASHEETS,
+    CSV_DATASHEETS_STRATAGEMS,
+    CSV_DETACHMENT_ABILITIES,
+    CSV_FACTIONS,
+    CSV_STRATAGEM_PHASES,
+    CSV_STRATAGEMS,
+    CSV_LAST_UPDATE,
 ]
 
 # Path to the local directory where the CSV files will be saved
 wahapedia_path = os.path.abspath("./wahapedia")
 
 # Path to the file that keeps track of the last time the CSV files were updated
-file_list_path = os.path.abspath(os.path.join(wahapedia_path, "_file_list.json"))
+file_list_path = os.path.abspath(os.path.join(wahapedia_path, JSON_FILE_LIST))
 
 
 def init_db():
@@ -54,10 +65,10 @@ def _wahapedia_has_update():
     If the file does not exist or the last_update field has changed, it will download the file.
     :return: True if the website has new updates, False otherwise
     """
-    last_update_path = os.path.join(wahapedia_path, "Last_update.csv")
+    last_update_path = os.path.join(wahapedia_path, CSV_LAST_UPDATE)
 
     if not os.path.exists(last_update_path):
-        print("Last_update.csv doesn't exists")
+        print("Initializing Wahapedia database...")
         return True
 
     last_update_dict_old = get_dict_from_csv(last_update_path)
@@ -67,7 +78,7 @@ def _wahapedia_has_update():
     if (last_update_dict_old[0]["last_update"]) != (
         last_update_dict_new[0]["last_update"]
     ):
-        print("Wahapedia has new updates")
+        print("Updating Wahapedia database...")
         return True
     return False
 
@@ -85,10 +96,10 @@ def _check_csv(csv_name):
         os.path.exists(os.path.join(wahapedia_path, csv_name))
         and _check_file_list(csv_name)
     ):
-        print(csv_name + " is bad, redownloading!")
+        print(f"Updating {csv_name}...")
         csv_path = _download_file(wahapedia_url + csv_name, wahapedia_path)
         _register_file_list(csv_name)
-        print("Saved to " + csv_path)
+        print(f"Updated {csv_name} successfully")
         csv_updated = True
 
     return csv_updated
@@ -102,7 +113,6 @@ def _check_file_list(csv_name):
     :return: True if the file is in the file list and was updated in the last 1 day, False otherwise
     """
     if not os.path.exists(file_list_path):
-        print(file_list_path + " not exists, creating new")
         _create_file_list()
 
     with open(file_list_path, "r") as fl:
@@ -112,7 +122,6 @@ def _check_file_list(csv_name):
         csv_time_delta = datetime.now() - datetime.fromisoformat(
             current_file_list_json[csv_name]
         )
-        print("File " + csv_name + " is updated [" + str(csv_time_delta) + "] ago")
         if csv_time_delta > timedelta(days=1):
             return False
         return True
@@ -156,20 +165,40 @@ def _download_file(file_url, folder_name):
     file_downloaded = False
 
     # Keep trying to download the file until it is successfully downloaded
-    while not file_downloaded:
-        get_response = requests.get(file_url, stream=True)
-        # Open the file and write the content in chunks
-        with open(save_path, "wb") as f:
-            for chunk in get_response.iter_content(chunk_size=1024):
-                if chunk:  # filter out keep-alive new chunks
-                    f.write(chunk)
-        file_size = os.stat(save_path).st_size
-        # Check if the file size is smaller than 2048 bytes, which could indicate that anti-spam is working
-        if file_size < 2048 and _is_html(save_path):
-            print("Anti Spam is working. Waiting for 5 second to try again.")
-            time.sleep(5)
-        else:
-            file_downloaded = True
+    max_retries = 5
+    retry_count = 0
+    
+    while not file_downloaded and retry_count < max_retries:
+        try:
+            get_response = requests.get(file_url, stream=True, timeout=30)
+            get_response.raise_for_status()  # Raise an exception for bad status codes
+            
+            # Open the file and write the content in chunks
+            with open(save_path, "wb") as f:
+                for chunk in get_response.iter_content(chunk_size=1024):
+                    if chunk:  # filter out keep-alive new chunks
+                        f.write(chunk)
+            
+            file_size = os.stat(save_path).st_size
+            # Check if the file size is smaller than 2048 bytes, which could indicate that anti-spam is working
+            if file_size < 2048 and _is_html(save_path):
+                print("Rate limited. Waiting 5 seconds before retry...")
+                time.sleep(5)
+                retry_count += 1
+            else:
+                file_downloaded = True
+                
+        except requests.exceptions.RequestException as e:
+            retry_count += 1
+            if retry_count >= max_retries:
+                raise ConnectionError(f"Failed to download {file_name} after {max_retries} attempts: {e}")
+            print(f"Download attempt {retry_count} failed, retrying in 3 seconds...")
+            time.sleep(3)
+        except (OSError, IOError) as e:
+            raise IOError(f"Failed to save file {file_name}: {e}")
+    
+    if not file_downloaded:
+        raise ConnectionError(f"Failed to download {file_name}: Maximum retry attempts exceeded")
 
     return save_path
 

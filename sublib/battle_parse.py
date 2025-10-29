@@ -2,7 +2,6 @@ import os
 import pathlib
 import zipfile
 
-from bs4 import BeautifulSoup, Tag
 from datetime import datetime, timedelta
 
 import xmltodict
@@ -13,7 +12,30 @@ from sublib.stratagems.stratagem_filters import (
     filter_core_stratagems,
     filter_out_core_stratagems,
 )
+from sublib.stratagems.stratagem_utils import clean_html, clean_full_stratagem, remove_symbol, get_bracket_text, get_first_letters
 from sublib.faction_utils import safe_lower
+
+# File Extensions
+FILE_EXT_ROSZ = ".rosz"
+
+# CSV File Names
+CSV_DATASHEETS = "Datasheets.csv"
+CSV_DATASHEETS_STRATAGEMS = "Datasheets_stratagems.csv"
+CSV_DETACHMENT_ABILITIES = "Detachment_abilities.csv"
+CSV_FACTIONS = "Factions.csv"
+CSV_STRATAGEMS = "Stratagems.csv"
+
+# Request Option Keys
+OPTION_SHOW_CORE = "show_core"
+OPTION_SHOW_EMPTY = "show_empty"
+OPTION_SHOW_UNITS = "show_units"
+OPTION_DONT_SHOW_RENOWN = "dont_show_renown"
+OPTION_DONT_SHOW_BEFORE = "dont_show_before"
+
+# Common Values
+OPTION_VALUE_ON = "on"
+PHASE_BEFORE_BATTLE = "Before battle"
+STRATAGEM_TYPE_CORE_LOWER = "core"
 
 # Absolute path of the battlescribe folder
 battlescribe_folder = os.path.abspath("./battlescribe")
@@ -41,17 +63,13 @@ def init_parse():
     """
     global _datasheets_dict, _datasheets_stratagems_dict, _factions_dict, _stratagem_phases_dict, _stratagems_dict, _detachment_abilities_dict
     # reading all csv file to dictionary format
-    _datasheets_dict = wahapedia_db.get_dict_from_csv("Datasheets.csv")
-    _datasheets_stratagems_dict = wahapedia_db.get_dict_from_csv(
-        "Datasheets_stratagems.csv"
-    )
-    _detachment_abilities_dict = wahapedia_db.get_dict_from_csv(
-        "Detachment_abilities.csv"
-    )
-    _factions_dict = wahapedia_db.get_dict_from_csv("Factions.csv")
+    _datasheets_dict = wahapedia_db.get_dict_from_csv(CSV_DATASHEETS)
+    _datasheets_stratagems_dict = wahapedia_db.get_dict_from_csv(CSV_DATASHEETS_STRATAGEMS)
+    _detachment_abilities_dict = wahapedia_db.get_dict_from_csv(CSV_DETACHMENT_ABILITIES)
+    _factions_dict = wahapedia_db.get_dict_from_csv(CSV_FACTIONS)
     # _stratagem_phases_dict = wahapedia_db.get_dict_from_csv("StratagemPhases.csv")
-    _stratagem_phases_dict = wahapedia_db.get_dict_from_csv("Stratagems.csv")
-    _stratagems_dict = wahapedia_db.get_dict_from_csv("Stratagems.csv")
+    _stratagem_phases_dict = wahapedia_db.get_dict_from_csv(CSV_STRATAGEMS)
+    _stratagems_dict = wahapedia_db.get_dict_from_csv(CSV_STRATAGEMS)
     _fix_stratagem_dict()
 
     # folder for battlescribe files should exist
@@ -67,6 +85,36 @@ def parse_battlescribe(battlescribe_file_name, request_options):
     """
     Parse the battlescribe file and returns the result in the form of a list of dictionaries and a list of lists
     """
+    _initialize_parsing(request_options)
+    
+    # Parse roster structure
+    _read_ros_file(battlescribe_file_name)
+    _prepare_roster_list()
+    
+    # Extract basic roster data
+    wh_faction = _find_faction()
+    wh_detachment = _find_detachment()
+    wh_units = _find_units(wh_faction)
+    
+    # Collect stratagems from various sources
+    stratagems_data = _collect_all_stratagems(wh_faction, wh_units)
+    
+    # Process each force and generate results
+    result_phase, result_units = _process_forces(wh_faction, wh_units, stratagems_data)
+    
+    # Clean up and finalize
+    _delete_old_files()
+    result_phase_sorted = _sort_phases_by_game_order(result_phase)
+    
+    total_stratagems = len(_get_full_stratagems_list())
+    phase_count = sum(len(phases) for phases in result_phase_sorted)
+    print(f"Report generated: {total_stratagems} stratagems across {phase_count} phases")
+
+    return result_phase_sorted, result_units, _get_full_stratagems_list()
+
+
+def _initialize_parsing(request_options):
+    """Initialize parsing state and load data"""
     global _full_stratagems_list, _request_options
 
     if wahapedia_db.init_db() is True:
@@ -74,62 +122,65 @@ def parse_battlescribe(battlescribe_file_name, request_options):
 
     wh40k_lists.clean_list()
     _full_stratagems_list = []
-    wh_empty_stratagems = []
-    wh_core_stratagems = []
-    wh_army_of_renown = []
-
     _request_options = request_options
 
-    _read_ros_file(battlescribe_file_name)
-    _prepare_roster_list()
+    if _request_options.get(OPTION_DONT_SHOW_BEFORE) == OPTION_VALUE_ON:
+        wh40k_lists.ignore_phases_list.append(PHASE_BEFORE_BATTLE)
 
-    wh_faction = _find_faction()
-    wh_detachment = _find_detachment()
-    wh_units = _find_units(wh_faction)
 
-    if _request_options.get("dont_show_renown") != "on":
-        wh_army_of_renown = _find_army_of_renown()
+def _collect_all_stratagems(wh_faction, wh_units):
+    """Collect stratagems from all sources based on request options"""
+    print("Processing roster configuration...")
+    
+    stratagems_data = {
+        'empty': [],
+        'core': [],
+        'army_of_renown': [],
+        'unit_specific': []
+    }
 
-    if _request_options.get("show_empty") == "on":
-        wh_empty_stratagems = _filter_empty_stratagems(wh_faction)
+    if _request_options.get(OPTION_DONT_SHOW_RENOWN) != OPTION_VALUE_ON:
+        stratagems_data['army_of_renown'] = _find_army_of_renown()
 
-    print(f"[DEBUG] show_core option: {_request_options.get('show_core')}")
-    print("[DEBUG] About to call filter_core_stratagems")
-    wh_core_stratagems = filter_core_stratagems(
-        _empty_stratagems_list, _request_options.get("show_core")
+    if _request_options.get(OPTION_SHOW_EMPTY) == OPTION_VALUE_ON:
+        stratagems_data['empty'] = _filter_empty_stratagems(wh_faction)
+
+    stratagems_data['core'] = filter_core_stratagems(
+        _empty_stratagems_list, _request_options.get(OPTION_SHOW_CORE)
     )
+    
+    stratagems_data['unit_specific'] = _find_stratagems(wh_units)
+    
+    return stratagems_data
 
-    if _request_options.get("dont_show_before") == "on":
-        wh40k_lists.ignore_phases_list.append("Before battle")
 
-    wh_stratagems = _find_stratagems(wh_units)
-
+def _process_forces(wh_faction, wh_units, stratagems_data):
+    """Process each force and generate phase/unit results"""
     result_phase = []
     result_units = []
 
     for id in range(0, len(wh_faction)):
         current_empty_stratagems = []
-        if len(wh_empty_stratagems) != 0:
-            current_empty_stratagems = wh_empty_stratagems[id]
+        if len(stratagems_data['empty']) != 0:
+            current_empty_stratagems = stratagems_data['empty'][id]
 
-        if len(wh_army_of_renown) != 0:
-            wh40k_lists.current_army_of_renown = wh_army_of_renown[id]
+        if len(stratagems_data['army_of_renown']) != 0:
+            wh40k_lists.current_army_of_renown = stratagems_data['army_of_renown'][id]
 
         # Combine all sources
         all_selected_stratagems = (
-            wh_stratagems[id] + current_empty_stratagems + wh_core_stratagems
+            stratagems_data['unit_specific'][id] + 
+            current_empty_stratagems + 
+            stratagems_data['core']
         )
-        # If show_core is not on, filter out any stratagem whose type contains 'core' (case-insensitive)
-        if _request_options.get("show_core") != "on":
+        
+        # Filter out core stratagems if not requested
+        if _request_options.get(OPTION_SHOW_CORE) != OPTION_VALUE_ON:
             all_selected_stratagems = filter_out_core_stratagems(
                 all_selected_stratagems, _get_stratagem_from_id
             )
 
-        print(f"[DEBUG] all_selected_stratagems[{id}]:")
-        for s in all_selected_stratagems:
-            print(
-                f"  - stratagem_id: {s.get('stratagem_id', '?')}, datasheet_id: {s.get('datasheet_id', '?')}"
-            )
+        print(f"Processing {len(all_selected_stratagems)} stratagems for force {id + 1}")
 
         current_id_phase = _prepare_stratagems_phase(
             all_selected_stratagems, wh_units[id], wh_faction[id]
@@ -139,9 +190,12 @@ def parse_battlescribe(battlescribe_file_name, request_options):
         )
         result_phase.append(current_id_phase)
         result_units.append(currend_id_units)
+    
+    return result_phase, result_units
 
-    _delete_old_files()
 
+def _sort_phases_by_game_order(result_phase):
+    """Sort phase results according to game phase order"""
     result_phase_sorted = []
     for phase_elem in result_phase:
         phase_elem_sorted = {
@@ -149,8 +203,7 @@ def parse_battlescribe(battlescribe_file_name, request_options):
             for i in sorted(phase_elem, key=lambda j: wh40k_lists.phases_list.index(j))
         }
         result_phase_sorted.append(phase_elem_sorted)
-
-    return result_phase_sorted, result_units, _get_full_stratagems_list()
+    return result_phase_sorted
 
 
 def _get_full_stratagems_list():
@@ -160,7 +213,7 @@ def _get_full_stratagems_list():
 
     full_list = []
     for stratagem_id in sorted_stratagems_list:
-        clean_stratagem = _clean_full_stratagem(
+        clean_stratagem = clean_full_stratagem(
             _get_stratagem_from_id(stratagem_id, clean_stratagem=True)
         )
         full_list.append(clean_stratagem)
@@ -168,34 +221,49 @@ def _get_full_stratagems_list():
     return full_list
 
 
-def _clean_full_stratagem(stratagem_dict):
-    result_stratagem = dict(stratagem_dict)
-    result_stratagem.pop("source_id", None)
-    result_stratagem.pop("", None)
-    result_stratagem["description"] = _clean_html(result_stratagem["description"])
 
-    return result_stratagem
 
 
 def _read_ros_file(file_name):
     global _ros_dict
     ros_file_name = file_name
     file_path = os.path.join(battlescribe_folder, file_name)
-    if pathlib.Path(file_path).suffix == ".rosz":
-        with zipfile.ZipFile(file_path, "r") as zip_ref:
-            rosz_packed_filename = zip_ref.infolist()[0].filename
-            battlescribe_tmp = os.path.join(battlescribe_folder, "tmp")
-            ros_file_name = file_name[:-1]
+    
+    try:
+        if pathlib.Path(file_path).suffix == FILE_EXT_ROSZ:
+            try:
+                with zipfile.ZipFile(file_path, "r") as zip_ref:
+                    if not zip_ref.infolist():
+                        raise ValueError("Empty or corrupted .rosz file")
+                    
+                    rosz_packed_filename = zip_ref.infolist()[0].filename
+                    battlescribe_tmp = os.path.join(battlescribe_folder, "tmp")
+                    ros_file_name = file_name[:-1]
 
-            zip_ref.extractall(battlescribe_tmp)
-            ros_file_path = os.path.join(battlescribe_folder, ros_file_name)
-            if os.path.exists(ros_file_path):
-                os.remove(ros_file_path)
-            os.rename(
-                os.path.join(battlescribe_tmp, rosz_packed_filename), ros_file_path
-            )
+                    os.makedirs(battlescribe_tmp, exist_ok=True)
+                    zip_ref.extractall(battlescribe_tmp)
+                    
+                    ros_file_path = os.path.join(battlescribe_folder, ros_file_name)
+                    if os.path.exists(ros_file_path):
+                        os.remove(ros_file_path)
+                    
+                    extracted_file_path = os.path.join(battlescribe_tmp, rosz_packed_filename)
+                    if not os.path.exists(extracted_file_path):
+                        raise FileNotFoundError(f"Expected file not found in archive: {rosz_packed_filename}")
+                    
+                    os.rename(extracted_file_path, ros_file_path)
+                    
+            except (zipfile.BadZipFile, zipfile.LargeZipFile) as e:
+                raise ValueError(f"Invalid or corrupted .rosz file: {e}")
+        
+        elif not os.path.exists(file_path):
+            raise FileNotFoundError(f"Roster file not found: {file_name}")
 
-    _ros_dict = _get_dict_from_xml(ros_file_name)
+        _ros_dict = _get_dict_from_xml(ros_file_name)
+        
+    except Exception as e:
+        print(f"Error reading roster file '{file_name}': {e}")
+        raise
 
 
 # if roster has several forces, that it is multidetachment army and _roster_list has more elements
@@ -217,8 +285,6 @@ def _find_faction():
         catalogueName = roster_elem["@catalogueName"]
         catalogueName_clean = _get_faction_name(catalogueName)
 
-        print("[DEBUG] Cleaned Faction Name:", catalogueName_clean)
-
         # Try to match catalogue name directly to faction name
         for faction in _factions_dict:
             faction_name = safe_lower(faction.get("name", ""))
@@ -227,7 +293,6 @@ def _find_faction():
                 faction_name in cat_name_clean_lower
                 or cat_name_clean_lower in faction_name
             ):
-                print("[DEBUG] Matched main faction:", faction)
                 force_faction = faction
                 break
 
@@ -249,18 +314,16 @@ def _find_faction():
                 )
                 for faction in _factions_dict:
                     if match_faction_name(faction.get("name", ""), subfaction_lookup):
-                        print("[DEBUG] Matched subfaction:", faction)
                         force_faction = faction
                         break
                 if force_faction:
                     break
 
         if force_faction:
+            print(f"Detected faction: {force_faction.get('name', 'Unknown')}")
             result_faction.append(force_faction)
         else:
-            print(
-                f"[WARNING] Could not determine faction for force: {catalogueName_clean}"
-            )
+            print(f"Warning: Could not determine faction for force: {catalogueName_clean}")
             result_faction.append(None)
 
     return result_faction
@@ -294,7 +357,7 @@ def _find_detachment():
         elif isinstance(force, list):
             wrappers = force
         else:
-            print(f"[ERROR] Unexpected force type: {type(force)} value: {force}")
+            print(f"Warning: Unrecognized army structure in roster file")
             wrappers = []
 
         # Look for a selection with name 'Detachment'
@@ -314,13 +377,7 @@ def _find_detachment():
                     det_name_raw = det_sel.get("name") or det_sel.get("@name") or ""
                     det_name_raw = det_name_raw.strip()
                     det_name_norm = det_name_raw.lower().replace(" ", "")
-                    print(
-                        f"[DETECT] Found detachment candidate: '{det_name_raw}' (norm: '{det_name_norm}')"
-                    )
                     if det_name_norm in detachment_map:
-                        print(
-                            f"[MATCH] Detachment matched: {detachment_map[det_name_norm]}"
-                        )
                         force_detachment = detachment_map[det_name_norm]
                         break
                 if force_detachment:
@@ -350,9 +407,10 @@ def _find_detachment():
                             break
                 if force_detachment:
                     break
+        if force_detachment:
+            print(f"Using detachment: {force_detachment}")
         result.append(force_detachment)
 
-    print(f"🧭 Detachments found: {result}")
     return result
 
 
@@ -452,13 +510,12 @@ def _filter_empty_stratagems(faction_ids):
 
 
 def _filter_core_stratagems():
-    print("[DEBUG] _filter_core_stratagems called")
-    if not _request_options.get("show_core") == "on":
+    if not _request_options.get(OPTION_SHOW_CORE) == OPTION_VALUE_ON:
         return []
     result_list = []
     for empty_stratagem in _empty_stratagems_list:
         strat_type = empty_stratagem["type"].lower()
-        if "core" in strat_type:
+        if STRATAGEM_TYPE_CORE_LOWER in strat_type:
             result_list.append(
                 {"datasheet_id": "", "stratagem_id": empty_stratagem["id"]}
             )
@@ -490,20 +547,15 @@ def _normalize_phases(phases):
     Returns:
         List[str]: Flattened list of individual, valid phase names.
     """
-    print(f"[DEBUG] wh40k_lists.phases_list: {wh40k_lists.phases_list}")
     if isinstance(phases, str):
         phases = [phases]
     normalized = []
     for phase in phases:
-        print(f"[DEBUG] _normalize_phases input: '{phase}'")
         parts = phase.split(" or ")
         for part in parts:
             part = part.strip()
             if part in wh40k_lists.phases_list:
-                print(f"[DEBUG] Phase '{part}' matched in phases_list")
                 normalized.append(part)
-            else:
-                print(f"[DEBUG] Phase '{part}' NOT matched in phases_list")
     return normalized
 
 
@@ -593,9 +645,6 @@ def _prepare_stratagems_phase(stratagems_id, units_id, faction_id):
                 continue
 
             phases = _normalize_phases(stratagem_phase["phase"])
-            print(
-                f"[DEBUG] Stratagem {full_stratagem['name']} (id={strat_id}) phases extracted: {phases}"
-            )
             for phase in phases:
                 if phase not in result_stratagems_phase:
                     result_stratagems_phase[phase] = [full_stratagem["name"]]
@@ -605,8 +654,6 @@ def _prepare_stratagems_phase(stratagems_id, units_id, faction_id):
 
             if full_stratagem["id"] not in _full_stratagems_list:
                 _full_stratagems_list.append(full_stratagem["id"])
-
-    print(f"[DEBUG] result_stratagems_phase: {result_stratagems_phase}")
 
     return result_stratagems_phase
 
@@ -733,7 +780,7 @@ def _get_stratagem_from_id(
 
                             result_stratagem["name"] += (
                                 " ["
-                                + _get_first_letters(stratagem_phase["phase"])
+                                + get_first_letters(stratagem_phase["phase"])
                                 + "]"
                             )
                     return result_stratagem
@@ -785,7 +832,7 @@ def _get_stratagem_phase(stratagem_id):
 
 
 def _get_faction_name(catalogue_name):
-    catalogue_array = _remove_symbol(catalogue_name.split(" - "), "'")
+    catalogue_array = remove_symbol(catalogue_name.split(" - "), "'")
     faction_name = catalogue_array[-1]
 
     if catalogue_array[-1] == "Craftworlds":
@@ -830,7 +877,7 @@ def _fix_stratagem_dict():
     for stratagem_csv in _stratagems_dict:
         # fix for Aeldari
         if stratagem_csv["faction_id"] == "AE":
-            stratagem_type_brackets = _get_bracket_text(stratagem_csv["type"])
+            stratagem_type_brackets = get_bracket_text(stratagem_csv["type"])
             if stratagem_type_brackets == "Alaitoc":
                 stratagem_csv["subfaction_id"] = "CWAL"
             elif stratagem_type_brackets == "Altansar":
@@ -875,52 +922,73 @@ def _compare_unit_names(wahapedia_name, battlescribe_name):
 
 
 # --- NON-Stratagem stuff ---
-def _get_first_letters(line):
-    words = line.split()
-    letters = [word[0] for word in words]
-    return "".join(letters)
 
 
-def _clean_html(html_str):
-    ignore_tags = ["a", "span"]
-    soup = BeautifulSoup(html_str, "html.parser")
 
-    for tag in ignore_tags:
-        for el in soup.find_all(tag):
-            if isinstance(el, Tag):
-                el.unwrap()
-
-    return str(soup)
 
 
 def _delete_old_files():
-    file_list = os.listdir(battlescribe_folder)
-    for single_file in file_list:
-        single_file_path = os.path.join(battlescribe_folder, single_file)
-        creation_time = datetime.fromtimestamp(os.path.getctime(single_file_path))
-        file_time_delta = datetime.now() - creation_time
-        if file_time_delta > timedelta(hours=1):
+    try:
+        if not os.path.exists(battlescribe_folder):
+            return
+            
+        file_list = os.listdir(battlescribe_folder)
+        deleted_count = 0
+        
+        for single_file in file_list:
+            if not single_file.endswith('.ros'):
+                continue
+                
+            single_file_path = os.path.join(battlescribe_folder, single_file)
+            
             try:
-                os.remove(single_file_path)
-                print(single_file + " deleted")
-            except:
-                print("Can't delete " + single_file)
+                creation_time = datetime.fromtimestamp(os.path.getctime(single_file_path))
+                file_time_delta = datetime.now() - creation_time
+                
+                if file_time_delta > timedelta(hours=1):
+                    os.remove(single_file_path)
+                    deleted_count += 1
+                    
+            except (OSError, FileNotFoundError) as e:
+                print(f"Warning: Could not delete {single_file}: {e}")
+                continue
+        
+        if deleted_count > 0:
+            print(f"Cleaned up {deleted_count} old roster files")
+            
+    except Exception as e:
+        print(f"Warning: Error during file cleanup: {e}")
 
 
 def _get_dict_from_xml(xml_file_name):
     xml_file_path = os.path.join(battlescribe_folder, xml_file_name)
-    with open(xml_file_path, errors="ignore") as xml_file:
-        data_dict = xmltodict.parse(xml_file.read())
-        return data_dict
+    
+    try:
+        if not os.path.exists(xml_file_path):
+            raise FileNotFoundError(f"Roster file not found: {xml_file_name}")
+        
+        if os.path.getsize(xml_file_path) == 0:
+            raise ValueError(f"Empty roster file: {xml_file_name}")
+        
+        with open(xml_file_path, encoding="utf8", errors="replace") as xml_file:
+            content = xml_file.read()
+            if not content.strip():
+                raise ValueError(f"Roster file contains no data: {xml_file_name}")
+            
+            data_dict = xmltodict.parse(content)
+            
+            # Validate basic roster structure
+            if "roster" not in data_dict:
+                raise ValueError("Invalid roster file: missing 'roster' element")
+                
+            return data_dict
+            
+    except UnicodeDecodeError as e:
+        raise ValueError(f"Invalid file encoding in '{xml_file_name}': {e}")
+    except Exception as e:
+        if "xml" in str(e).lower() or "parse" in str(e).lower():
+            raise ValueError(f"Invalid XML in roster file '{xml_file_name}': {e}")
+        raise ValueError(f"Error parsing roster file '{xml_file_name}': {e}")
 
 
-def _remove_symbol(arr, symbol):
-    return [word.replace(symbol, "") for word in arr]
 
-
-def _get_bracket_text(string):
-    start_index = string.find("(")
-    end_index = string.find(")")
-    if start_index == -1 or end_index == -1:
-        return None
-    return string[start_index + 1 : end_index]
