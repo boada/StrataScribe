@@ -1,0 +1,8 @@
+# Production requirements
+xmltodict
+flask
+requests
+json2html
+lxml
+beautifulsoup4
+gunicorn
