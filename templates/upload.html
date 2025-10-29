@@ -25,6 +25,12 @@
 </nav>
 
 <div class="container">
+    {% if error %}
+    <div class="alert alert-danger mt-3" role="alert">
+        <strong>Error:</strong> {{ error }}
+    </div>
+    {% endif %}
+    
     <form action="/" enctype="multipart/form-data" method="POST">
         <input {{accept|safe}} name="file" type="file"/>
         <input type="submit"/>
