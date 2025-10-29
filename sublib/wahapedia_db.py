@@ -7,10 +7,18 @@ from datetime import datetime, timedelta
 import requests
 
 # URL for the Wahapedia website
-wahapedia_url = "https://wahapedia.ru/wh40k9ed/"
+wahapedia_url = "https://wahapedia.ru/wh40k10ed/"
 
 # List of all CSV files to be downloaded from the website
-wahapedia_csv_list = ["Datasheets.csv", "Datasheets_stratagems.csv", "Factions.csv", "StratagemPhases.csv", "Stratagems.csv", "Last_update.csv"]
+wahapedia_csv_list = [
+    "Datasheets.csv",
+    "Datasheets_stratagems.csv",
+    "Detachment_abilities.csv",
+    "Factions.csv",
+    "StratagemPhases.csv",
+    "Stratagems.csv",
+    "Last_update.csv",
+]
 
 # Path to the local directory where the CSV files will be saved
 wahapedia_path = os.path.abspath("./wahapedia")
@@ -56,7 +64,9 @@ def _wahapedia_has_update():
     _check_csv("Last_update.csv")
     last_update_dict_new = get_dict_from_csv(last_update_path)
 
-    if (last_update_dict_old[0]["last_update"]) != (last_update_dict_new[0]["last_update"]):
+    if (last_update_dict_old[0]["last_update"]) != (
+        last_update_dict_new[0]["last_update"]
+    ):
         print("Wahapedia has new updates")
         return True
     return False
@@ -64,14 +74,17 @@ def _wahapedia_has_update():
 
 def _check_csv(csv_name):
     """
-    Checks if the specified CSV file needs to be updated by comparing its last update time with the file list.
-    If the file does not exist or is older than 1 day, it will be downloaded from the website and the file list will be updated.
-:param csv_name: the name of the CSV file to be checked
-:return: True if the file was updated, False otherwise
-"""
+        Checks if the specified CSV file needs to be updated by comparing its last update time with the file list.
+        If the file does not exist or is older than 1 day, it will be downloaded from the website and the file list will be updated.
+    :param csv_name: the name of the CSV file to be checked
+    :return: True if the file was updated, False otherwise
+    """
 
     csv_updated = False
-    if not (os.path.exists(os.path.join(wahapedia_path, csv_name)) and _check_file_list(csv_name)):
+    if not (
+        os.path.exists(os.path.join(wahapedia_path, csv_name))
+        and _check_file_list(csv_name)
+    ):
         print(csv_name + " is bad, redownloading!")
         csv_path = _download_file(wahapedia_url + csv_name, wahapedia_path)
         _register_file_list(csv_name)
@@ -96,7 +109,9 @@ def _check_file_list(csv_name):
         current_file_list_json = json.load(fl)
 
     if csv_name in current_file_list_json:
-        csv_time_delta = datetime.now() - datetime.fromisoformat(current_file_list_json[csv_name])
+        csv_time_delta = datetime.now() - datetime.fromisoformat(
+            current_file_list_json[csv_name]
+        )
         print("File " + csv_name + " is updated [" + str(csv_time_delta) + "] ago")
         if csv_time_delta > timedelta(days=1):
             return False
@@ -144,7 +159,7 @@ def _download_file(file_url, folder_name):
     while not file_downloaded:
         get_response = requests.get(file_url, stream=True)
         # Open the file and write the content in chunks
-        with open(save_path, 'wb') as f:
+        with open(save_path, "wb") as f:
             for chunk in get_response.iter_content(chunk_size=1024):
                 if chunk:  # filter out keep-alive new chunks
                     f.write(chunk)
@@ -161,22 +176,26 @@ def _download_file(file_url, folder_name):
 
 def _is_html(file_path):
     html_string = "<!DOCTYPE html>"
-    with open(file_path, 'r', encoding='ascii', errors='ignore') as f:
+    with open(file_path, "r", encoding="ascii", errors="ignore") as f:
         content = f.read()
         return html_string in content
 
 
 def get_dict_from_csv(csv_path):
     """
-    Converts a CSV file to a list of dictionaries
+    Converts a CSV file to a list of dictionaries.
+    Strips out any trailing empty columns caused by malformed delimiters.
+
     :param csv_path: the path of the CSV file to be converted
-    :return: a list of dictionaries
+    :return: a list of cleaned dictionaries
     """
     results = []
     csv_file_path = os.path.abspath(os.path.join(wahapedia_path, csv_path))
-    with open(csv_file_path, 'r', encoding='ascii', errors='ignore') as csvfile:
-        reader = csv.DictReader(csvfile, delimiter='|', quoting=csv.QUOTE_NONE)
+    with open(csv_file_path, "r", encoding="ascii", errors="ignore") as csvfile:
+        reader = csv.DictReader(csvfile, delimiter="|", quoting=csv.QUOTE_NONE)
         for row in reader:
-            results.append(row)
+            # Remove any keys that are empty strings
+            clean_row = {k: v for k, v in row.items() if k.strip() != ""}
+            results.append(clean_row)
 
     return results
