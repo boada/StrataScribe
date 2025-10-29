@@ -10,6 +10,15 @@
 <style>
 body, h3 {font-family: 'Crimson Pro', serif; }
 table.print-friendly tr td, table.print-friendly tr th { page-break-inside: avoid; }
+/* Two-column layout for stratagems and units */
+.Columns2 { column-count: 2; column-gap: 2em; }
+/* Unit block styling for new div-based layout */
+.unitBlock_CS { break-inside: avoid; margin-bottom: 1em; padding: 0.5em 1em; border: 1px solid #eee; border-radius: 6px; background: #fafbfc; }
+.unitName_CS { font-weight: bold; font-size: 1.1em; margin-bottom: 0.3em; }
+.unitStratList_CS { margin: 0 0 0 1em; padding: 0; }
+.unitStratList_CS li { margin-bottom: 0.2em; }
+.unitNoStrat_CS { color: #888; font-style: italic; }
+</style>
 </style>
 
 <head>
@@ -19,6 +28,9 @@ table.print-friendly tr td, table.print-friendly tr th { page-break-inside: avoi
 
 <body>
 <div class="container bg-white" >
+    <div style="margin-top: 1em; margin-bottom: 1em;">
+        <a href="/" class="btn btn-secondary">&#8592; Back to Main Page</a>
+    </div>
     <div style="break-before: page;">
         <h3>Stratagem by Phase</h3>
         {{html_phase|safe}}
@@ -27,7 +39,9 @@ table.print-friendly tr td, table.print-friendly tr th { page-break-inside: avoi
 
     <div style="break-before: page;">
         <h3>Stratagem by Unit</h3>
-        {{html_units|safe}}
+        <div class="Columns2">
+            {{html_units|safe}}
+        </div>
         <hr/>
     </div>
 
