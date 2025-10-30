@@ -161,55 +161,27 @@ class StratagemRepository:
         return None
     
     def find_stratagems_by_type(self, stratagem_type: str, faction_id: Optional[str] = None) -> List[Stratagem]:
-        """
-        Find stratagems by type (e.g., "Core", "Battle Tactic").
-        
-        Args:
-            stratagem_type: Type to search for (case-insensitive)
-            faction_id: Optional faction ID to filter by
-            
-        Returns:
-            List of matching stratagem domain objects
-        """
-        stratagems = self.get_all_stratagems(faction_id)
-        type_lower = stratagem_type.lower()
-        
-        return [
-            stratagem for stratagem in stratagems
-            if type_lower in stratagem.type.lower()
-        ]
+        """Find stratagems by type (e.g., "Core", "Battle Tactic")."""
+        return self._filter_stratagems(
+            lambda s: stratagem_type.lower() in s.type.lower(),
+            faction_id
+        )
     
     def find_core_stratagems(self, faction_id: Optional[str] = None) -> List[Stratagem]:
-        """
-        Find all core stratagems.
-        
-        Args:
-            faction_id: Optional faction ID to filter by
-            
-        Returns:
-            List of core stratagem domain objects
-        """
-        stratagems = self.get_all_stratagems(faction_id)
-        return [stratagem for stratagem in stratagems if stratagem.is_core]
+        """Find all core stratagems."""
+        return self._filter_stratagems(lambda s: s.is_core, faction_id)
     
     def find_stratagems_by_phase(self, phase: str, faction_id: Optional[str] = None) -> List[Stratagem]:
-        """
-        Find stratagems by game phase.
-        
-        Args:
-            phase: Game phase to search for
-            faction_id: Optional faction ID to filter by
-            
-        Returns:
-            List of matching stratagem domain objects
-        """
+        """Find stratagems by game phase."""
+        return self._filter_stratagems(
+            lambda s: phase.lower() in s.phase.lower(),
+            faction_id
+        )
+    
+    def _filter_stratagems(self, predicate, faction_id: Optional[str] = None) -> List[Stratagem]:
+        """Helper method to filter stratagems with a predicate function."""
         stratagems = self.get_all_stratagems(faction_id)
-        phase_lower = phase.lower()
-        
-        return [
-            stratagem for stratagem in stratagems
-            if phase_lower in stratagem.phase.lower()
-        ]
+        return [stratagem for stratagem in stratagems if predicate(stratagem)]
     
     def get_all_datasheets(self) -> List[WahapediaDatasheet]:
         """
