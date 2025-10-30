@@ -506,126 +506,98 @@ class RosterProcessingService:
                                    detachment_data: List[Optional[str]],
                                    unit_data: List[List[Dict[str, Any]]],
                                    options: ProcessingOptions) -> List[Stratagem]:
-        """
-        Filter stratagems to only those relevant to the roster forces.
-        
-        Args:
-            all_stratagems: All available stratagems
-            faction_data: Faction information for each force
-            detachment_data: Detachment information for each force
-            unit_data: Unit information for each force 
-            options: Processing options
-            
-        Returns:
-            List of relevant stratagems for this roster
-        """
+        """Filter stratagems to only those relevant to the roster forces."""
         try:
             relevant_stratagems = []
             
-            # Get unit datasheet IDs from roster (this is what matters for unit stratagems)
-            roster_unit_datasheet_ids = set()
+            # Get roster context
+            unit_datasheet_ids = self._get_roster_datasheet_ids(unit_data)
+            detachment_names = self._get_roster_detachment_names(detachment_data)
             
-            for force_units in unit_data:
-                for unit_dict in force_units:
-                    if unit_dict.get('datasheet_id'):
-                        roster_unit_datasheet_ids.add(unit_dict['datasheet_id'])
-            
-            logger.debug(f"Roster has {len(roster_unit_datasheet_ids)} unique unit datasheet IDs")
-            
-            # Get datasheet-stratagem relationships to find unit-specific stratagems
-            datasheet_stratagems = self.repository.wahapedia_service.get_datasheet_stratagems()
-            
-            # Find stratagem IDs that are linked to our roster units
-            relevant_stratagem_ids = set()
-            
-            for relationship in datasheet_stratagems:
-                datasheet_id = relationship.get('datasheet_id')
-                stratagem_id = relationship.get('stratagem_id')
-                
-                if datasheet_id in roster_unit_datasheet_ids:
-                    relevant_stratagem_ids.add(stratagem_id)
-                    logger.debug(f"Found stratagem {stratagem_id} for datasheet {datasheet_id}")
-            
-            logger.info(f"Found {len(relevant_stratagem_ids)} stratagem IDs linked to roster units")
-            
-            # Get detachment names for filtering detachment-specific stratagems  
-            roster_detachment_names = set()
-            for detachment_name in detachment_data:
-                if detachment_name:
-                    roster_detachment_names.add(detachment_name)
-            
-            logger.info(f"Roster detachments: {roster_detachment_names}")
-            
-            # Filter stratagems by relevance
+            # Build stratagem lookups
             stratagem_map = {s.id: s for s in all_stratagems}
+            unit_stratagem_ids = self._get_unit_stratagem_ids(unit_datasheet_ids)
             
-            # 1. Add unit-specific stratagems (linked to roster units via datasheets, but exclude detachment stratagems)
-            unit_stratagem_count = 0
-            for stratagem_id in relevant_stratagem_ids:
-                if stratagem_id in stratagem_map:
-                    stratagem = stratagem_map[stratagem_id]
-                    
-                    # Skip stratagems that have a detachment (they'll be handled separately)
-                    if stratagem.detachment:
-                        logger.debug(f"Skipping detachment stratagem in unit section: '{stratagem.name}' (detachment: {stratagem.detachment})")
-                        continue
-                    
-                    # Skip Core and Boarding Actions stratagems here - they'll be handled in the core section
-                    if 'Core' in stratagem.type or 'Boarding Actions' in stratagem.type:
-                        logger.debug(f"Skipping core/boarding stratagem in unit section: '{stratagem.name}' (type: {stratagem.type})")
-                        continue
-                        
-                    relevant_stratagems.append(stratagem)
-                    unit_stratagem_count += 1
-                    logger.info(f"Including unit stratagem: '{stratagem.name}' (type: {stratagem.type})")
-
-            logger.info(f"Added {unit_stratagem_count} unit-specific stratagems")            # 2. Add detachment-specific stratagems (matching roster detachments)
-            detachment_stratagem_count = 0
-            for stratagem in all_stratagems:
-                # Check if this stratagem belongs to one of our detachments
-                if stratagem.detachment and stratagem.detachment in roster_detachment_names:
-                    if stratagem not in relevant_stratagems:  # Avoid duplicates
-                        relevant_stratagems.append(stratagem)
-                        detachment_stratagem_count += 1
-                        logger.info(f"Including detachment stratagem: '{stratagem.name}' for detachment '{stratagem.detachment}'")
-                    else:
-                        logger.debug(f"Skipping duplicate: '{stratagem.name}'")
-            
-            logger.info(f"Added {detachment_stratagem_count} detachment-specific stratagems")
-            
-            # 3. Add core stratagems if requested (following legacy filtering rules)
-            core_stratagem_count = 0
-            added_stratagem_names = {s.name for s in relevant_stratagems}
+            # Add relevant stratagems by category
+            relevant_stratagems.extend(self._get_unit_stratagems(unit_stratagem_ids, stratagem_map))
+            relevant_stratagems.extend(self._get_detachment_stratagems(all_stratagems, detachment_names))
             
             if options.show_core:
-                for stratagem in all_stratagems:
-                    # Apply legacy filtering rules from wh40k_lists.py
-                    # Invalid types: (Supplement), Crusher Stampede, Crusade, Fallen Angels, Boarding Actions
-                    invalid_types = ['(Supplement)', 'Crusher Stampede', 'Crusade', 'Fallen Angels', 'Boarding Actions']
-                    if any(invalid_type in stratagem.type for invalid_type in invalid_types):
-                        logger.debug(f"Skipping invalid stratagem type: '{stratagem.name}' (type: {stratagem.type})")
-                        continue
-                    
-                    # Must be core stratagem and not already added
-                    if 'core' in stratagem.type.lower() and stratagem.name not in added_stratagem_names:
-                        # Special case: exclude NEW ORDERS as it wasn't in legacy results
-                        if stratagem.name == 'NEW ORDERS':
-                            logger.debug(f"Skipping NEW ORDERS stratagem (not in legacy results)")
-                            continue
-                            
-                        relevant_stratagems.append(stratagem)
-                        added_stratagem_names.add(stratagem.name)
-                        core_stratagem_count += 1
-                        logger.info(f"Including core stratagem: '{stratagem.name}' (type: {stratagem.type})")
-                
-                logger.info(f"Added {core_stratagem_count} core stratagems")
-
+                existing_names = {s.name for s in relevant_stratagems}
+                relevant_stratagems.extend(self._get_core_stratagems(all_stratagems, existing_names))
+            
             logger.info(f"Final count: {len(relevant_stratagems)} relevant stratagems")
             return relevant_stratagems
             
         except Exception as e:
             logger.error(f"Failed to filter relevant stratagems: {e}")
-            return []  # Return empty list instead of failing completely
+            return []
+    
+    def _get_roster_datasheet_ids(self, unit_data: List[List[Dict[str, Any]]]) -> set:
+        """Extract datasheet IDs from roster unit data."""
+        datasheet_ids = set()
+        for force_units in unit_data:
+            for unit_dict in force_units:
+                if unit_dict.get('datasheet_id'):
+                    datasheet_ids.add(unit_dict['datasheet_id'])
+        return datasheet_ids
+    
+    def _get_roster_detachment_names(self, detachment_data: List[Optional[str]]) -> set:
+        """Extract detachment names from roster data."""
+        return {name for name in detachment_data if name}
+    
+    def _get_unit_stratagem_ids(self, unit_datasheet_ids: set) -> set:
+        """Get stratagem IDs linked to roster unit datasheets."""
+        datasheet_stratagems = self.repository.wahapedia_service.get_datasheet_stratagems()
+        stratagem_ids = set()
+        
+        for relationship in datasheet_stratagems:
+            datasheet_id = relationship.get('datasheet_id')
+            stratagem_id = relationship.get('stratagem_id')
+            
+            if datasheet_id in unit_datasheet_ids:
+                stratagem_ids.add(stratagem_id)
+        
+        return stratagem_ids
+    
+    def _get_unit_stratagems(self, unit_stratagem_ids: set, stratagem_map: dict) -> List[Stratagem]:
+        """Get unit-specific stratagems, excluding detachment and core types."""
+        stratagems = []
+        
+        for stratagem_id in unit_stratagem_ids:
+            if stratagem_id in stratagem_map:
+                stratagem = stratagem_map[stratagem_id]
+                
+                # Skip detachment and core stratagems (handled separately)
+                if stratagem.detachment or 'Core' in stratagem.type or 'Boarding Actions' in stratagem.type:
+                    continue
+                    
+                stratagems.append(stratagem)
+        
+        return stratagems
+    
+    def _get_detachment_stratagems(self, all_stratagems: List[Stratagem], detachment_names: set) -> List[Stratagem]:
+        """Get stratagems for roster detachments."""
+        return [s for s in all_stratagems 
+                if s.detachment and s.detachment in detachment_names]
+    
+    def _get_core_stratagems(self, all_stratagems: List[Stratagem], existing_names: set) -> List[Stratagem]:
+        """Get core stratagems following legacy filtering rules."""
+        stratagems = []
+        invalid_types = ['(Supplement)', 'Crusher Stampede', 'Crusade', 'Fallen Angels', 'Boarding Actions']
+        
+        for stratagem in all_stratagems:
+            # Apply legacy filtering rules
+            if any(invalid_type in stratagem.type for invalid_type in invalid_types):
+                continue
+            
+            # Must be core stratagem and not already added
+            if ('core' in stratagem.type.lower() and 
+                stratagem.name not in existing_names and 
+                stratagem.name != 'NEW ORDERS'):  # Special legacy exclusion
+                stratagems.append(stratagem)
+        
+        return stratagems
     
     def _match_faction_for_force(self, force: 'RosterForce', all_factions: List['Faction']) -> Optional['Faction']:
         """

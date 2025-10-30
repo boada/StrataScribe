@@ -233,15 +233,7 @@ class FileService:
             return 0
     
     def validate_file(self, filename: str) -> bool:
-        """
-        Validate if a filename has a supported extension.
-        
-        Args:
-            filename: Filename to validate
-            
-        Returns:
-            True if file extension is supported
-        """
+        """Validate if a filename has a supported extension."""
         extension = Path(filename).suffix.lower()
         return extension in self.supported_extensions
     
