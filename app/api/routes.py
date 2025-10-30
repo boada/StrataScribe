@@ -23,6 +23,17 @@ bp = Blueprint('main', __name__)
 config = get_config()
 
 
+@bp.route("/health")
+def health_check():
+    """Health check endpoint for monitoring and tests."""
+    return {
+        "status": "healthy",
+        "service": "StrataScribe",
+        "debug": current_app.config.get('DEBUG', False),
+        "supported_extensions": list(current_app.config.get('SUPPORTED_EXTENSIONS', ['.ros', '.rosz']))
+    }, 200
+
+
 @bp.route("/", methods=["GET", "POST"])
 def upload_file():
     """Handle file upload and roster processing."""

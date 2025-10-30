@@ -169,40 +169,57 @@ class TestFileService:
         """Test cleaning up old roster files."""
         from datetime import datetime, timedelta
         
-        # Create test files with different ages
-        old_file = self.service.upload_folder / "old.ros"
-        new_file = self.service.upload_folder / "new.rosz"
-        non_roster_file = self.service.upload_folder / "other.txt"
-        
-        # Create the files
-        for file_path in [old_file, new_file, non_roster_file]:
-            file_path.touch()
-        
-        # Mock file ages
         old_time = datetime.now() - timedelta(hours=48)  # 2 days old
         new_time = datetime.now() - timedelta(hours=1)   # 1 hour old
         
-        with patch('pathlib.Path.stat') as mock_stat:
-            def stat_side_effect(self):
-                if self.name == "old.ros":
-                    mock_stat.return_value.st_ctime = old_time.timestamp()
-                else:
-                    mock_stat.return_value.st_ctime = new_time.timestamp()
-                return mock_stat.return_value
+        # Mock the entire cleanup process using pathlib.Path
+        with patch('pathlib.Path.iterdir') as mock_iterdir:
+            # Create mock file objects
+            mock_old_file = Mock()
+            mock_old_file.name = "old.ros"
+            mock_old_file.is_file.return_value = True
+            mock_old_file.suffix = ".ros"
+            mock_old_file.unlink = Mock()
             
-            type(Path).stat = property(stat_side_effect)
+            mock_new_file = Mock()
+            mock_new_file.name = "new.rosz"
+            mock_new_file.is_file.return_value = True
+            mock_new_file.suffix = ".rosz"
             
-            with patch('datetime.datetime') as mock_datetime:
-                mock_datetime.now.return_value = datetime.now()
-                mock_datetime.fromtimestamp = datetime.fromtimestamp
+            mock_other_file = Mock()
+            mock_other_file.name = "other.txt"
+            mock_other_file.is_file.return_value = True
+            mock_other_file.suffix = ".txt"
+            
+            mock_iterdir.return_value = [mock_old_file, mock_new_file, mock_other_file]
+            
+            # Mock stat and fromtimestamp
+            mock_old_stat = Mock()
+            mock_old_stat.st_ctime = old_time.timestamp()
+            mock_old_file.stat.return_value = mock_old_stat
+            
+            mock_new_stat = Mock()
+            mock_new_stat.st_ctime = new_time.timestamp()
+            mock_new_file.stat.return_value = mock_new_stat
+            
+            mock_other_stat = Mock()
+            mock_other_stat.st_ctime = new_time.timestamp()
+            mock_other_file.stat.return_value = mock_other_stat
+            
+            with patch('datetime.datetime') as mock_datetime_class:
+                mock_datetime_class.now.return_value = datetime.now()
+                mock_datetime_class.fromtimestamp.side_effect = datetime.fromtimestamp
                 
                 deleted_count = self.service.cleanup_old_files(max_age_hours=24)
                 
-                assert deleted_count >= 0  # Should attempt cleanup
+                # Should delete the old .ros file
+                assert deleted_count >= 0
+                mock_old_file.unlink.assert_called_once()
     
     def test_cleanup_old_files_with_config_default(self):
         """Test cleanup using config default retention time."""
-        with patch.object(self.service.upload_folder, 'iterdir', return_value=[]):
+        # Mock empty directory using pathlib.Path.iterdir
+        with patch('pathlib.Path.iterdir', return_value=[]):
             deleted_count = self.service.cleanup_old_files()
             assert deleted_count == 0
 
