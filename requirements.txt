@@ -4,3 +4,4 @@ requests
 json2html
 lxml
 bs4
+pytest
