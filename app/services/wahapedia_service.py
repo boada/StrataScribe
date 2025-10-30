@@ -53,7 +53,7 @@ class WahapediaService:
         self.config = config or get_config()
         
         # Directory setup
-        self.data_dir = Path(self.config.WAHAPEDIA_DATA_DIR)
+        self.data_dir = Path(self.config.WAHAPEDIA_DATA_PATH)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         
         # File tracking
@@ -62,9 +62,9 @@ class WahapediaService:
         # Download settings
         self.base_url = self.config.WAHAPEDIA_BASE_URL
         self.csv_files = self.config.WAHAPEDIA_CSV_FILES
-        self.max_retries = self.config.WAHAPEDIA_MAX_RETRIES
-        self.retry_delay = self.config.WAHAPEDIA_RETRY_DELAY
-        self.rate_limit_delay = self.config.WAHAPEDIA_RATE_LIMIT_DELAY
+        self.max_retries = self.config.MAX_RETRIES
+        self.retry_delay = self.config.RETRY_DELAY
+        self.rate_limit_delay = self.config.RETRY_DELAY  # Use same delay for rate limits
         
         logger.info(f"WahapediaService initialized with data directory: {self.data_dir}")
     

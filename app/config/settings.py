@@ -32,18 +32,13 @@ class Config:
         "Stratagems.csv",
         "Last_update.csv"
     ]
-    WAHAPEDIA_DATA_DIR = os.path.abspath("./wahapedia")
-    WAHAPEDIA_DATA_PATH = os.path.abspath("./wahapedia")  # Keep for backward compatibility
+    WAHAPEDIA_DATA_PATH = os.path.abspath("./wahapedia")
     WAHAPEDIA_FILE_LIST = "_file_list.json"
     
     # Request Settings
     REQUEST_TIMEOUT = 30
     MAX_RETRIES = 5
     RETRY_DELAY = 3
-    RATE_LIMIT_DELAY = 5
-    WAHAPEDIA_MAX_RETRIES = 5
-    WAHAPEDIA_RETRY_DELAY = 3
-    WAHAPEDIA_RATE_LIMIT_DELAY = 5
     MIN_FILE_SIZE = 2048  # Minimum file size to avoid rate limit responses
     
     # File Cleanup
