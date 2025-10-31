@@ -23,6 +23,22 @@ bp = Blueprint('main', __name__)
 config = get_config()
 
 
+def _stratagem_to_dict(stratagem):
+    """Convert Stratagem domain object to dict format for legacy templates."""
+    return {
+        'name': stratagem.name,
+        'faction_id': stratagem.faction_id,
+        'type': stratagem.type,
+        'cp_cost': stratagem.cp_cost,
+        'legend': stratagem.legend,
+        'description': stratagem.description,
+        'phase': stratagem.phase,
+        'id': stratagem.id,
+        'detachment': stratagem.detachment or '',
+        'subfaction_id': stratagem.subfaction_id or ''
+    }
+
+
 @bp.route("/health")
 def health_check():
     """Health check endpoint for monitoring and tests."""
@@ -85,24 +101,8 @@ def upload_file():
                 else:
                     html_units = prepare_html.convert_units_to_divs(units_data)
                 
-                # Convert Stratagem domain objects to format expected by prepare_html
-                stratagems_list = []
-                for stratagem in all_stratagems:
-                    # Convert domain object to dict format expected by legacy template
-                    stratagem_dict = {
-                        'name': stratagem.name,
-                        'faction_id': stratagem.faction_id,
-                        'type': stratagem.type,
-                        'cp_cost': stratagem.cp_cost,
-                        'legend': stratagem.legend,
-                        'description': stratagem.description,
-                        'phase': stratagem.phase,
-                        'id': stratagem.id,
-                        'detachment': stratagem.detachment or '',
-                        'subfaction_id': stratagem.subfaction_id or ''
-                    }
-                    stratagems_list.append(stratagem_dict)
-                        
+                # Convert Stratagem domain objects to format expected by legacy templates
+                stratagems_list = [_stratagem_to_dict(s) for s in all_stratagems]
                 html_stratagems = prepare_html.convert_to_stratagem_list(stratagems_list)
                 
                 return render_template(
@@ -113,13 +113,13 @@ def upload_file():
                 )
                 
             except (ValueError, FileNotFoundError) as e:
-                print(f"Error processing roster file: {e}")
+                current_app.logger.error(f"Error processing roster file: {e}")
                 return render_template("upload.html", accept=accept, error=f"Error processing roster file: {e}")
             except ConnectionError as e:
-                print(f"Network error: {e}")
+                current_app.logger.error(f"Network error: {e}")
                 return render_template("upload.html", accept=accept, error="Network error: Unable to download game data. Please try again later.")
             except Exception as e:
-                print(f"Unexpected error processing roster: {e}")
+                current_app.logger.error(f"Unexpected error processing roster: {e}")
                 return render_template("upload.html", accept=accept, error="An unexpected error occurred. Please check your roster file and try again.")
         else:
             return render_template("upload.html", accept=accept)

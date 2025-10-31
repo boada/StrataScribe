@@ -14,7 +14,8 @@ from typing import Optional
 import xmltodict
 
 from app.config import get_config
-from app.models.domain import RosterData, FileUploadInfo
+from app.models.domain import RosterData
+from app.models.external import FileUploadInfo
 from app.models.converters import roster_xml_to_domain
 
 

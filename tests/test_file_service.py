@@ -10,7 +10,8 @@ import tempfile
 from app.services.file_service import (
     FileService, FileServiceError, InvalidRosterFileError
 )
-from app.models.domain import RosterData, FileUploadInfo
+from app.models.domain import RosterData
+from app.models.external import FileUploadInfo
 from app.config.settings import TestingConfig
 
 

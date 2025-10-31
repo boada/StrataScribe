@@ -168,17 +168,7 @@ class ProcessingOptions:
         return ignored
 
 
-@dataclass
-class FileUploadInfo:
-    """Information about an uploaded file."""
-    filename: str
-    original_name: str
-    file_extension: str
-    file_size: Optional[int] = None
-    
-    def __post_init__(self):
-        if not self.filename:
-            raise ValueError("FileUploadInfo must have a filename")
+
 
 
 @dataclass
