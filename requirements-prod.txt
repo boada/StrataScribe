@@ -1,4 +1,4 @@
-# Production requirements
+# Production requirements for Render deployment
 xmltodict
 flask
 requests
