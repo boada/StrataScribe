@@ -10,11 +10,9 @@ import uuid
 import logging
 
 # New clean architecture imports
-from app.services import RosterServiceFactory
+from app.services import RosterServiceFactory, HtmlService
 from app.models.domain import ProcessingOptions
 from app.config import get_config
-# Legacy HTML generation (TODO: modernize this as well)
-from sublib import prepare_html
 
 # Create blueprint
 bp = Blueprint('main', __name__)
@@ -68,8 +66,9 @@ def upload_file():
             random_filename = str(uuid.uuid4()) + file_ext
             
             try:
-                # Create roster processing service
+                # Create services
                 roster_service = RosterServiceFactory.create_service(config)
+                html_service = HtmlService()
                 
                 # Save uploaded file using our FileService
                 file_info = roster_service.file_service.save_uploaded_file(f, random_filename)
@@ -86,24 +85,24 @@ def upload_file():
                 units_data = processing_result.units
                 all_stratagems = processing_result.all_stratagems
                 
-                # Generate HTML using existing template utilities
-                html_phase = prepare_html.convert_to_table(phase_data)
+                # Generate HTML using new HTML service
+                html_phase = html_service.convert_to_table(phase_data)
                 
                 # Handle multi-detachment: units_data might be a list of dicts
                 if isinstance(units_data, list):
                     html_units = "".join(
                         [
-                            prepare_html.convert_units_to_divs(units_dict)
+                            html_service.convert_units_to_divs(units_dict)
                             for units_dict in units_data
                             if isinstance(units_dict, dict)
                         ]
                     )
                 else:
-                    html_units = prepare_html.convert_units_to_divs(units_data)
+                    html_units = html_service.convert_units_to_divs(units_data)
                 
-                # Convert Stratagem domain objects to format expected by legacy templates
+                # Convert Stratagem domain objects to format expected by HTML service
                 stratagems_list = [_stratagem_to_dict(s) for s in all_stratagems]
-                html_stratagems = prepare_html.convert_to_stratagem_list(stratagems_list)
+                html_stratagems = html_service.convert_to_stratagem_list(stratagems_list)
                 
                 return render_template(
                     "report.html",
