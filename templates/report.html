@@ -10,15 +10,111 @@
 <style>
 body, h3 {font-family: 'Crimson Pro', serif; }
 table.print-friendly tr td, table.print-friendly tr th { page-break-inside: avoid; }
+
 /* Two-column layout for stratagems and units */
-.Columns2 { column-count: 2; column-gap: 2em; }
+.Columns2 { 
+    column-count: 2; 
+    column-gap: 2em; 
+    column-fill: balance;
+}
+
 /* Unit block styling for new div-based layout */
-.unitBlock_CS { break-inside: avoid; margin-bottom: 1em; padding: 0.5em 1em; border: 1px solid #eee; border-radius: 6px; background: #fafbfc; }
+.unitBlock_CS { 
+    break-inside: avoid; 
+    page-break-inside: avoid;
+    margin-bottom: 1em; 
+    padding: 0.5em 1em; 
+    border: 1px solid #eee; 
+    border-radius: 6px; 
+    background: #fafbfc; 
+}
+
 .unitName_CS { font-weight: bold; font-size: 1.1em; margin-bottom: 0.3em; }
 .unitStratList_CS { margin: 0 0 0 1em; padding: 0; }
 .unitStratList_CS li { margin-bottom: 0.2em; }
 .unitNoStrat_CS { color: #888; font-style: italic; }
-</style>
+
+/* Print-specific styles */
+@media print {
+    body {
+        font-size: 11pt;
+        line-height: 1.3;
+        color: #000;
+        background: #fff;
+    }
+    
+    .container {
+        max-width: none !important;
+        width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    
+    .btn {
+        display: none !important;
+    }
+    
+    h3 {
+        font-size: 14pt;
+        font-weight: bold;
+        margin: 1em 0 0.5em 0;
+        page-break-after: avoid;
+    }
+    
+    hr {
+        border: none;
+        border-top: 1px solid #000;
+        margin: 1em 0;
+        page-break-after: avoid;
+    }
+    
+    .Columns2 {
+        column-count: 2;
+        column-gap: 1.5em;
+        column-rule: 1px solid #ddd;
+        column-fill: balance;
+    }
+    
+    .unitBlock_CS {
+        background: none !important;
+        border: 1px solid #ccc;
+        border-radius: 0;
+        padding: 0.3em 0.5em;
+        margin-bottom: 0.5em;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    
+    .unitName_CS {
+        font-size: 12pt;
+        font-weight: bold;
+    }
+    
+    .unitNoStrat_CS {
+        color: #666;
+    }
+    
+    /* Page break controls */
+    .page-break {
+        page-break-before: always;
+    }
+    
+    /* Avoid breaks in the middle of stratagem entries */
+    .stratagem-entry, .unit-entry {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    
+    /* Ensure first page doesn't have unnecessary margin */
+    .first-section {
+        page-break-before: avoid;
+    }
+    
+    /* Hide navigation elements when printing */
+    .no-print {
+        display: none !important;
+    }
+}</style>
 </style>
 
 <head>
@@ -28,16 +124,19 @@ table.print-friendly tr td, table.print-friendly tr th { page-break-inside: avoi
 
 <body>
 <div class="container bg-white" >
-    <div style="margin-top: 1em; margin-bottom: 1em;">
+    <div class="no-print" style="margin-top: 1em; margin-bottom: 1em;">
         <a href="/" class="btn btn-secondary">&#8592; Back to Main Page</a>
     </div>
-    <div style="break-before: page;">
+    
+    <div class="first-section">
         <h3>Stratagem by Phase</h3>
-        {{html_phase|safe}}
+        <div class="stratagem-entry">
+            {{html_phase|safe}}
+        </div>
         <hr/>
     </div>
 
-    <div style="break-before: page;">
+    <div class="page-break">
         <h3>Stratagem by Unit</h3>
         <div class="Columns2">
             {{html_units|safe}}
@@ -45,7 +144,7 @@ table.print-friendly tr td, table.print-friendly tr th { page-break-inside: avoi
         <hr/>
     </div>
 
-    <div style="break-before: page;">
+    <div class="page-break">
         <h3>Stratagem List</h3>
         <div class="Columns2">
             {{html_stratagems|safe}}
