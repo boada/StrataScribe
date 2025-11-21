@@ -3,7 +3,9 @@ import string
 from json2html import json2html
 
 # CSS Classes
-CSS_TABLE_ATTRIBUTES = 'class="table table-bordered table-striped w-auto print-friendly"; '
+CSS_TABLE_ATTRIBUTES = (
+    'class="table table-bordered table-striped w-auto print-friendly"; '
+)
 CSS_STRAT_WRAPPER = "stratWrapper_CS BreakInsideAvoid"
 CSS_STRAT_FACTION = "stratFaction_CS"
 CSS_STRAT_LEGEND = "ShowFluff stratLegend2"
@@ -67,7 +69,7 @@ def _render_single_stratagem(stratagem_data):
     """Render a single stratagem as HTML"""
     json_template = string.Template(stratagem_template)
     stratagem_class = _get_stratagem_css_class(stratagem_data["type"])
-    
+
     return json_template.substitute(
         stratagem_name=stratagem_data["name"],
         stratagem_cp_cost=stratagem_data["cp_cost"],
@@ -88,16 +90,16 @@ def _get_stratagem_css_class(stratagem_type):
         STRATAGEM_TYPE_REQUISITION: CSS_STRAT_REQUISITION,
         STRATAGEM_TYPE_WARGEAR: CSS_STRAT_WARGEAR,
     }
-    
+
     base_class = CSS_STRAT_NAME_9K
-    
+
     if STRATAGEM_TYPE_CORE in stratagem_type:
         return CSS_STRAT_NAME_CS
-    
+
     for type_key, class_name in type_to_class.items():
         if type_key in stratagem_type:
             return f"{base_class} {class_name}"
-    
+
     return CSS_STRAT_NAME_WSP
 
 

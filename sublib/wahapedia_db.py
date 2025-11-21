@@ -166,18 +166,18 @@ def _download_file(file_url, folder_name):
     # Keep trying to download the file until it is successfully downloaded
     max_retries = 5
     retry_count = 0
-    
+
     while not file_downloaded and retry_count < max_retries:
         try:
             get_response = requests.get(file_url, stream=True, timeout=30)
             get_response.raise_for_status()  # Raise an exception for bad status codes
-            
+
             # Open the file and write the content in chunks
             with open(save_path, "wb") as f:
                 for chunk in get_response.iter_content(chunk_size=1024):
                     if chunk:  # filter out keep-alive new chunks
                         f.write(chunk)
-            
+
             file_size = os.stat(save_path).st_size
             # Check if the file size is smaller than 2048 bytes, which could indicate that anti-spam is working
             if file_size < 2048 and _is_html(save_path):
@@ -186,18 +186,22 @@ def _download_file(file_url, folder_name):
                 retry_count += 1
             else:
                 file_downloaded = True
-                
+
         except requests.exceptions.RequestException as e:
             retry_count += 1
             if retry_count >= max_retries:
-                raise ConnectionError(f"Failed to download {file_name} after {max_retries} attempts: {e}")
+                raise ConnectionError(
+                    f"Failed to download {file_name} after {max_retries} attempts: {e}"
+                )
             print(f"Download attempt {retry_count} failed, retrying in 3 seconds...")
             time.sleep(3)
         except (OSError, IOError) as e:
             raise IOError(f"Failed to save file {file_name}: {e}")
-    
+
     if not file_downloaded:
-        raise ConnectionError(f"Failed to download {file_name}: Maximum retry attempts exceeded")
+        raise ConnectionError(
+            f"Failed to download {file_name}: Maximum retry attempts exceeded"
+        )
 
     return save_path
 

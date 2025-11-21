@@ -1,6 +1,7 @@
 """
 Faction, detachment, and subfaction detection utilities for BattleScribe parser.
 """
+
 from typing import Dict, List, Optional, Any, Callable
 
 
@@ -60,14 +61,24 @@ def compare_unit_names(wahapedia_name, battlescribe_name, unit_rename_dict):
     return False
 
 
-def find_faction_from_roster(roster_list, factions_dict, subfaction_types, subfaction_rename_dict, get_faction_name_func):
+def find_faction_from_roster(
+    roster_list,
+    factions_dict,
+    subfaction_types,
+    subfaction_rename_dict,
+    get_faction_name_func,
+):
     """Find faction for each force in the roster."""
     result_faction = []
 
     for roster_elem in roster_list:
         force_faction = None
         catalogueName = roster_elem["@catalogueName"]
-        catalogueName_clean = get_faction_name_func(catalogueName, subfaction_rename_dict, lambda arr, symbol: [word.replace(symbol, "") for word in arr])
+        catalogueName_clean = get_faction_name_func(
+            catalogueName,
+            subfaction_rename_dict,
+            lambda arr, symbol: [word.replace(symbol, "") for word in arr],
+        )
 
         # Try to match catalogue name directly to faction name
         for faction in factions_dict:
@@ -100,7 +111,9 @@ def find_faction_from_roster(roster_list, factions_dict, subfaction_types, subfa
             print(f"Detected faction: {force_faction.get('name', 'Unknown')}")
             result_faction.append(force_faction)
         else:
-            print(f"Warning: Could not determine faction for force: {catalogueName_clean}")
+            print(
+                f"Warning: Could not determine faction for force: {catalogueName_clean}"
+            )
             result_faction.append(None)
 
     return result_faction
@@ -136,7 +149,7 @@ def get_subfaction_from_units(units_id, subfaction_rename_dict):
 def find_detachment_from_roster(roster_list, detachment_abilities_dict):
     """
     Attempts to find the detachment used in each force of the roster by inspecting unit keywords.
-    
+
     Returns:
         list of str: List of detected detachments for each force, or None if not found.
     """
@@ -176,7 +189,7 @@ def find_detachment_from_roster(roster_list, detachment_abilities_dict):
             print(f"Detected detachment: {force_detachment}")
         else:
             print("Warning: Could not determine detachment")
-        
+
         result.append(force_detachment)
 
     return result

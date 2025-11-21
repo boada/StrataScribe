@@ -45,11 +45,11 @@ def filter_out_core_stratagems(stratagems, get_stratagem_from_id):
 def filter_empty_stratagems_by_faction(faction_ids, empty_stratagems_list):
     """
     Filter empty stratagems by faction IDs, matching faction and subfaction IDs.
-    
+
     Args:
         faction_ids: List of faction dictionaries with 'id' and optionally 'parent_id'
         empty_stratagems_list: List of stratagem dictionaries with faction and subfaction info
-        
+
     Returns:
         List of lists: Each inner list contains stratagems for the corresponding faction
     """
@@ -83,17 +83,17 @@ def filter_empty_stratagems_by_faction(faction_ids, empty_stratagems_list):
 def filter_core_stratagems_from_list(empty_stratagems_list, show_core_option):
     """
     Extract core stratagems from empty stratagems list based on show_core option.
-    
+
     Args:
         empty_stratagems_list: List of stratagem dictionaries
         show_core_option: String option to show core stratagems ("on" to show, anything else to hide)
-        
+
     Returns:
         List of stratagem references if show_core is "on", empty list otherwise
     """
     if show_core_option != OPTION_VALUE_ON:
         return []
-    
+
     result_list = []
     for empty_stratagem in empty_stratagems_list:
         strat_type = empty_stratagem.get("type", "").lower()

@@ -11,10 +11,20 @@ from sublib.stratagems.stratagem_filters import (
     filter_empty_stratagems_by_faction,
     filter_core_stratagems_from_list,
 )
-from sublib.stratagems.stratagem_utils import clean_html, clean_full_stratagem, remove_symbol, get_bracket_text, get_first_letters
+from sublib.stratagems.stratagem_utils import (
+    clean_html,
+    clean_full_stratagem,
+    remove_symbol,
+    get_bracket_text,
+    get_first_letters,
+)
 from sublib.faction_utils import (
-    safe_lower, get_faction_name, compare_unit_names, 
-    find_faction_from_roster, get_subfaction_from_units, find_detachment_from_roster
+    safe_lower,
+    get_faction_name,
+    compare_unit_names,
+    find_faction_from_roster,
+    get_subfaction_from_units,
+    find_detachment_from_roster,
 )
 from sublib.file_utils import read_ros_file, get_dict_from_xml, delete_old_files
 
@@ -67,8 +77,12 @@ def init_parse() -> None:
     global _datasheets_dict, _datasheets_stratagems_dict, _factions_dict, _stratagem_phases_dict, _stratagems_dict, _detachment_abilities_dict
     # reading all csv file to dictionary format
     _datasheets_dict = wahapedia_db.get_dict_from_csv(CSV_DATASHEETS)
-    _datasheets_stratagems_dict = wahapedia_db.get_dict_from_csv(CSV_DATASHEETS_STRATAGEMS)
-    _detachment_abilities_dict = wahapedia_db.get_dict_from_csv(CSV_DETACHMENT_ABILITIES)
+    _datasheets_stratagems_dict = wahapedia_db.get_dict_from_csv(
+        CSV_DATASHEETS_STRATAGEMS
+    )
+    _detachment_abilities_dict = wahapedia_db.get_dict_from_csv(
+        CSV_DETACHMENT_ABILITIES
+    )
     _factions_dict = wahapedia_db.get_dict_from_csv(CSV_FACTIONS)
     # _stratagem_phases_dict = wahapedia_db.get_dict_from_csv("StratagemPhases.csv")
     _stratagem_phases_dict = wahapedia_db.get_dict_from_csv(CSV_STRATAGEMS)
@@ -84,14 +98,16 @@ def init_parse() -> None:
 
 
 # request_options are coming from Web UI and has several options
-def parse_battlescribe(battlescribe_file_name: str, request_options: Dict[str, str]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+def parse_battlescribe(
+    battlescribe_file_name: str, request_options: Dict[str, str]
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Parse the battlescribe file and returns the result in the form of three lists:
-    
+
     Args:
         battlescribe_file_name: Name of the .ros or .rosz file to parse
         request_options: Dictionary of options from the web UI (show_core, show_empty, etc.)
-    
+
     Returns:
         Tuple containing:
         - List of phase dictionaries (stratagems organized by game phase)
@@ -99,29 +115,31 @@ def parse_battlescribe(battlescribe_file_name: str, request_options: Dict[str, s
         - List of all stratagem dictionaries
     """
     _initialize_parsing(request_options)
-    
+
     # Parse roster structure
     _read_ros_file_wrapper(battlescribe_file_name)
     _prepare_roster_list()
-    
+
     # Extract basic roster data
     wh_faction = _find_faction()
     wh_detachment = _find_detachment()
     wh_units = _find_units(wh_faction)
-    
+
     # Collect stratagems from various sources
     stratagems_data = _collect_all_stratagems(wh_faction, wh_units)
-    
+
     # Process each force and generate results
     result_phase, result_units = _process_forces(wh_faction, wh_units, stratagems_data)
-    
+
     # Clean up and finalize
     delete_old_files(battlescribe_folder)
     result_phase_sorted = _sort_phases_by_game_order(result_phase)
-    
+
     total_stratagems = len(_get_full_stratagems_list())
     phase_count = sum(len(phases) for phases in result_phase_sorted)
-    print(f"Report generated: {total_stratagems} stratagems across {phase_count} phases")
+    print(
+        f"Report generated: {total_stratagems} stratagems across {phase_count} phases"
+    )
 
     return result_phase_sorted, result_units, _get_full_stratagems_list()
 
@@ -144,26 +162,26 @@ def _initialize_parsing(request_options: Dict[str, str]) -> None:
 def _collect_all_stratagems(wh_faction, wh_units):
     """Collect stratagems from all sources based on request options"""
     print("Processing roster configuration...")
-    
+
     stratagems_data = {
-        'empty': [],
-        'core': [],
-        'army_of_renown': [],
-        'unit_specific': []
+        "empty": [],
+        "core": [],
+        "army_of_renown": [],
+        "unit_specific": [],
     }
 
     if _request_options.get(OPTION_DONT_SHOW_RENOWN) != OPTION_VALUE_ON:
-        stratagems_data['army_of_renown'] = _find_army_of_renown()
+        stratagems_data["army_of_renown"] = _find_army_of_renown()
 
     if _request_options.get(OPTION_SHOW_EMPTY) == OPTION_VALUE_ON:
-        stratagems_data['empty'] = _filter_empty_stratagems(wh_faction)
+        stratagems_data["empty"] = _filter_empty_stratagems(wh_faction)
 
-    stratagems_data['core'] = filter_core_stratagems(
+    stratagems_data["core"] = filter_core_stratagems(
         _empty_stratagems_list, _request_options.get(OPTION_SHOW_CORE)
     )
-    
-    stratagems_data['unit_specific'] = _find_stratagems(wh_units)
-    
+
+    stratagems_data["unit_specific"] = _find_stratagems(wh_units)
+
     return stratagems_data
 
 
@@ -174,26 +192,28 @@ def _process_forces(wh_faction, wh_units, stratagems_data):
 
     for id in range(0, len(wh_faction)):
         current_empty_stratagems = []
-        if len(stratagems_data['empty']) != 0:
-            current_empty_stratagems = stratagems_data['empty'][id]
+        if len(stratagems_data["empty"]) != 0:
+            current_empty_stratagems = stratagems_data["empty"][id]
 
-        if len(stratagems_data['army_of_renown']) != 0:
-            wh40k_lists.current_army_of_renown = stratagems_data['army_of_renown'][id]
+        if len(stratagems_data["army_of_renown"]) != 0:
+            wh40k_lists.current_army_of_renown = stratagems_data["army_of_renown"][id]
 
         # Combine all sources
         all_selected_stratagems = (
-            stratagems_data['unit_specific'][id] + 
-            current_empty_stratagems + 
-            stratagems_data['core']
+            stratagems_data["unit_specific"][id]
+            + current_empty_stratagems
+            + stratagems_data["core"]
         )
-        
+
         # Filter out core stratagems if not requested
         if _request_options.get(OPTION_SHOW_CORE) != OPTION_VALUE_ON:
             all_selected_stratagems = filter_out_core_stratagems(
                 all_selected_stratagems, _get_stratagem_from_id
             )
 
-        print(f"Processing {len(all_selected_stratagems)} stratagems for force {id + 1}")
+        print(
+            f"Processing {len(all_selected_stratagems)} stratagems for force {id + 1}"
+        )
 
         current_id_phase = _prepare_stratagems_phase(
             all_selected_stratagems, wh_units[id], wh_faction[id]
@@ -203,7 +223,7 @@ def _process_forces(wh_faction, wh_units, stratagems_data):
         )
         result_phase.append(current_id_phase)
         result_units.append(currend_id_units)
-    
+
     return result_phase, result_units
 
 
@@ -234,9 +254,6 @@ def _get_full_stratagems_list():
     return full_list
 
 
-
-
-
 def _read_ros_file_wrapper(file_name: str) -> None:
     """Wrapper to maintain global state while using new file utilities."""
     global _ros_dict
@@ -258,11 +275,11 @@ def _prepare_roster_list() -> None:
 def _find_faction() -> List[Optional[Dict[str, Any]]]:
     """Find faction information for each force in the roster."""
     return find_faction_from_roster(
-        _roster_list, 
-        _factions_dict, 
+        _roster_list,
+        _factions_dict,
         wh40k_lists.subfaction_types,
         wh40k_lists.subfaction_rename_dict,
-        get_faction_name
+        get_faction_name,
     )
 
 
@@ -418,14 +435,18 @@ def _find_empty_stratagems():
     _empty_stratagems_list = empty_stratagems_full_list
 
 
-def _filter_empty_stratagems(faction_ids: List[Optional[Dict[str, Any]]]) -> List[List[Dict[str, str]]]:
+def _filter_empty_stratagems(
+    faction_ids: List[Optional[Dict[str, Any]]],
+) -> List[List[Dict[str, str]]]:
     """Filter empty stratagems by faction IDs."""
     return filter_empty_stratagems_by_faction(faction_ids, _empty_stratagems_list)
 
 
 def _filter_core_stratagems() -> List[Dict[str, str]]:
     """Filter core stratagems based on request options."""
-    return filter_core_stratagems_from_list(_empty_stratagems_list, _request_options.get(OPTION_SHOW_CORE))
+    return filter_core_stratagems_from_list(
+        _empty_stratagems_list, _request_options.get(OPTION_SHOW_CORE)
+    )
 
 
 def _find_stratagems(units_ids):
@@ -685,9 +706,7 @@ def _get_stratagem_from_id(
                         if stratagem_phase["id"] == stratagem_id:
 
                             result_stratagem["name"] += (
-                                " ["
-                                + get_first_letters(stratagem_phase["phase"])
-                                + "]"
+                                " [" + get_first_letters(stratagem_phase["phase"]) + "]"
                             )
                     return result_stratagem
 
@@ -739,7 +758,9 @@ def _get_stratagem_phase(stratagem_id):
 
 def _get_faction_name(catalogue_name: str) -> Optional[str]:
     """Extract faction name from catalogue name."""
-    return get_faction_name(catalogue_name, wh40k_lists.subfaction_rename_dict, remove_symbol)
+    return get_faction_name(
+        catalogue_name, wh40k_lists.subfaction_rename_dict, remove_symbol
+    )
 
 
 def _get_subfaction_from_units(units_id: List[Dict[str, Any]]) -> Optional[str]:
@@ -787,5 +808,6 @@ def _fix_stratagem_dict():
 # compares battlescribe and wahapedia names according to rename dictionary
 def _compare_unit_names(wahapedia_name: str, battlescribe_name: str) -> bool:
     """Compare unit names using the rename dictionary."""
-    return compare_unit_names(wahapedia_name, battlescribe_name, wh40k_lists.unit_rename_dict)
-
+    return compare_unit_names(
+        wahapedia_name, battlescribe_name, wh40k_lists.unit_rename_dict
+    )

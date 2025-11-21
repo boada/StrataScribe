@@ -1,6 +1,7 @@
 """
 Stratagem utility functions for BattleScribe parser.
 """
+
 from bs4 import BeautifulSoup, Tag
 
 
